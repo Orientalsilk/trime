@@ -8,6 +8,9 @@
 # disable obfuscation
 -dontobfuscate
 
+# Keep sherpa-onnx (looked up from native code by name)
+-keep class com.k2fsa.sherpa.onnx.** { *; }
+
 # Keep JNI interface
 -keep class com.osfans.trime.core.* { *; }
 

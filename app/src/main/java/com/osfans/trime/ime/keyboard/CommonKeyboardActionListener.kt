@@ -16,6 +16,7 @@ import com.osfans.trime.core.KeyModifiers
 import com.osfans.trime.core.RimeApi
 import com.osfans.trime.core.RimeKeyEvent
 import com.osfans.trime.daemon.RimeSession
+import com.osfans.trime.voice.SherpaVoice
 import com.osfans.trime.daemon.launchOnReady
 import com.osfans.trime.data.prefs.AppPrefs
 import com.osfans.trime.data.theme.ColorManager
@@ -143,7 +144,7 @@ class CommonKeyboardActionListener(override val di: DI) : DIAware {
                         KeyEvent.KEYCODE_SETTINGS -> handleSettings(action)
                         KeyEvent.KEYCODE_PROG_RED -> showColorPicker()
                         KeyEvent.KEYCODE_MENU -> showEnabledSchemaPicker()
-                        KeyEvent.KEYCODE_VOICE_ASSIST -> switchToVoiceInputMethod()
+                        KeyEvent.KEYCODE_VOICE_ASSIST -> if (!SherpaVoice.toggle(service)) switchToVoiceInputMethod()
                         else -> handleDefaultKeyAction(action)
                     }
                 }

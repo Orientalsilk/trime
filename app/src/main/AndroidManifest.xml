@@ -11,6 +11,7 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <application
         android:name="com.osfans.trime.TrimeApplication"
@@ -69,6 +70,14 @@ SPDX-License-Identifier: GPL-3.0-or-later
                 android:value="androidx.startup"
                 tools:node="remove" />
         </provider>
+
+        <!-- Transparent activity used to request the microphone permission for voice input -->
+        <activity
+            android:name=".voice.MicPermissionActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <!-- Settings activity -->
         <activity

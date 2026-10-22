@@ -31,6 +31,8 @@ class NativeAppConventionPlugin : NativeBaseConventionPlugin() {
             packaging {
                 jniLibs {
                     useLegacyPackaging = true
+                    // sherpa-onnx prebuilt libraries may also be present in the cached prebuilt dir
+                    pickFirsts += listOf("**/libonnxruntime.so", "**/libsherpa-onnx-*.so")
                 }
             }
             defaultConfig {

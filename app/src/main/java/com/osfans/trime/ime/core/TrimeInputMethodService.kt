@@ -604,6 +604,7 @@ open class TrimeInputMethodService : LifecycleInputMethodService() {
 
     override fun onFinishInputView(finishingInput: Boolean) {
         Timber.d("onFinishInputView: finishingInput=$finishingInput")
+        com.osfans.trime.voice.SherpaVoice.stop()
         decorLocationUpdated = false
         inputView?.dismissCandidateActionMenu()
         candidatesView?.dismissCandidateActionMenu()
