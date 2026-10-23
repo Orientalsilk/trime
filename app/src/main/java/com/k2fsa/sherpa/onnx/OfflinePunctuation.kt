@@ -9,7 +9,6 @@ data class OfflinePunctuationModelConfig(
     var provider: String = "cpu",
 )
 
-
 data class OfflinePunctuationConfig(
     var model: OfflinePunctuationModelConfig,
 )

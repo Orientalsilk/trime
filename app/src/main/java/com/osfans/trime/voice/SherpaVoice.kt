@@ -17,14 +17,14 @@ import android.os.Looper
 import android.os.SystemClock
 import android.widget.Toast
 import androidx.core.content.ContextCompat
-import com.k2fsa.sherpa.onnx.FeatureConfig
-import com.k2fsa.sherpa.onnx.OnlineModelConfig
-import com.k2fsa.sherpa.onnx.OnlineParaformerModelConfig
 import com.k2fsa.sherpa.onnx.EndpointConfig
 import com.k2fsa.sherpa.onnx.EndpointRule
+import com.k2fsa.sherpa.onnx.FeatureConfig
 import com.k2fsa.sherpa.onnx.OfflinePunctuation
 import com.k2fsa.sherpa.onnx.OfflinePunctuationConfig
 import com.k2fsa.sherpa.onnx.OfflinePunctuationModelConfig
+import com.k2fsa.sherpa.onnx.OnlineModelConfig
+import com.k2fsa.sherpa.onnx.OnlineParaformerModelConfig
 import com.k2fsa.sherpa.onnx.OnlineRecognizer
 import com.k2fsa.sherpa.onnx.OnlineRecognizerConfig
 import com.osfans.trime.ime.core.TrimeInputMethodService
@@ -119,13 +119,13 @@ object SherpaVoice {
                         ?.let {
                             OfflinePunctuation(
                                 config =
-                                    OfflinePunctuationConfig(
-                                        model =
-                                            OfflinePunctuationModelConfig(
-                                                ctTransformer = it.absolutePath,
-                                                numThreads = 2,
-                                            ),
+                                OfflinePunctuationConfig(
+                                    model =
+                                    OfflinePunctuationModelConfig(
+                                        ctTransformer = it.absolutePath,
+                                        numThreads = 2,
                                     ),
+                                ),
                             )
                         }?.also { punctuation = it }
                 }
@@ -295,11 +295,11 @@ object SherpaVoice {
                         modelType = "paraformer",
                     ),
                     endpointConfig =
-                        EndpointConfig(
-                            rule1 = EndpointRule(false, 1.8f, 0.0f),
-                            rule2 = EndpointRule(true, 0.7f, 0.0f),
-                            rule3 = EndpointRule(false, 0.0f, 20.0f),
-                        ),
+                    EndpointConfig(
+                        rule1 = EndpointRule(false, 1.8f, 0.0f),
+                        rule2 = EndpointRule(true, 0.7f, 0.0f),
+                        rule3 = EndpointRule(false, 0.0f, 20.0f),
+                    ),
                     enableEndpoint = true,
                     decodingMethod = "greedy_search",
                 )
