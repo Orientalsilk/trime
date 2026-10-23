@@ -56,8 +56,14 @@ class KeyView(
 
     private val voiceIndicatorPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val voiceStateListener: () -> Unit = { postInvalidate() }
+    private val voiceTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
+
+    // The voice action can be bound to a tap or to a long press (e.g. the space bar).
     private val isVoiceKey: Boolean
-        get() = key.getAction(KeyBehavior.CLICK)?.code == KeyEvent.KEYCODE_VOICE_ASSIST
+        get() =
+            listOf(KeyBehavior.CLICK, KeyBehavior.LONG_CLICK).any {
+                key.getAction(it)?.code == KeyEvent.KEYCODE_VOICE_ASSIST
+            }
 
     private var cachedIcon: IconicsDrawable? = null
     private var cachedIconName: String? = null
@@ -310,86 +316,92 @@ class KeyView(
 
         drawBackground(canvas, key)
 
-        val label = key.getLabel().let {
-            if (it == "enter_labels") keyboardView.labelEnter else it
-        }
+        val voiceActive = isVoiceKey && SherpaVoice.phase != SherpaVoice.Phase.IDLE
+        if (!voiceActive) {
+            val label = key.getLabel().let {
+                if (it == "enter_labels") keyboardView.labelEnter else it
+            }
 
-        if (label.isNotEmpty()) {
-            drawLabel(canvas, label)
-        }
+            if (label.isNotEmpty()) {
+                drawLabel(canvas, label)
+            }
 
-        val symbol = key.symbolLabel
-        if (symbol.isNotEmpty()) {
-            drawSymbol(canvas, symbol)
-        }
+            val symbol = key.symbolLabel
+            if (symbol.isNotEmpty()) {
+                drawSymbol(canvas, symbol)
+            }
 
-        val hint = key.hint
-        if (hint.isNotEmpty()) {
-            drawSymbol(canvas, hint, isTop = false)
+            val hint = key.hint
+            if (hint.isNotEmpty()) {
+                drawSymbol(canvas, hint, isTop = false)
+            }
         }
 
         drawVoiceListeningIndicator(canvas)
     }
 
     /**
-     * Show listening state directly on the voice key instead of covering keyboard
-     * keys with a floating panel. The animated outline and waveform do not replace
-     * the key label, so the user can still identify the control used to stop listening.
+     * Voice status shown inside the voice key itself (the space bar): while listening the label is
+     * replaced by a live waveform that follows the microphone level; while preparing / finishing it
+     * shows a short status word. The pulsing outline marks the key as the one to tap to stop.
      */
     private fun drawVoiceListeningIndicator(canvas: Canvas) {
-        if (!isVoiceKey || !SherpaVoice.isListening) return
+        val state = SherpaVoice.phase
+        if (!isVoiceKey || state == SherpaVoice.Phase.IDLE) return
 
         val now = android.os.SystemClock.uptimeMillis()
-        val phase = (now % 1_200L) / 1_200f
-        val pulse = (0.5f + 0.5f * kotlin.math.sin(phase * 2f * Math.PI)).toFloat()
-        val inset = dp(2f)
-        val radius = dp(8f)
+        val t = (now % 1_600L) / 1_600f
+        val pulse = (0.5f + 0.5f * kotlin.math.sin(t * 2f * Math.PI)).toFloat()
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val accent = Color.rgb(43, 112, 238)
 
         voiceIndicatorPaint.apply {
-            color = Color.rgb(43, 112, 238)
+            color = accent
             style = Paint.Style.STROKE
             strokeWidth = dp(1.5f)
             alpha = (135 + pulse * 120).toInt()
         }
-        canvas.drawRoundRect(
-            inset,
-            inset,
-            width - inset,
-            height - inset,
-            radius,
-            radius,
-            voiceIndicatorPaint,
-        )
+        val inset = dp(2f)
+        canvas.drawRoundRect(inset, inset, w - inset, h - inset, dp(8f), dp(8f), voiceIndicatorPaint)
 
-        // Five animated bars along the top edge form a compact sound-wave cue.
-        voiceIndicatorPaint.apply {
-            style = Paint.Style.FILL
-            alpha = 235
+        if (state == SherpaVoice.Phase.LISTENING) {
+            voiceIndicatorPaint.apply {
+                style = Paint.Style.FILL
+                color = accent
+                alpha = 240
+            }
+            val count = 23
+            val barW = dp(3f)
+            val gap = dp(3f)
+            val total = count * barW + (count - 1) * gap
+            val startX = (w - total) / 2f
+            val mid = (count - 1) / 2f
+            val level = SherpaVoice.level
+            for (i in 0 until count) {
+                val dist = kotlin.math.abs(i - mid) / mid
+                val envelope = 1f - 0.65f * dist * dist
+                val wobble =
+                    0.55f + 0.45f * kotlin.math.abs(
+                        kotlin.math.sin(t * 2f * Math.PI * 2f + i * 0.7f),
+                    ).toFloat()
+                val amp = (0.1f + 0.9f * level) * envelope * wobble
+                val barH = maxOf(dp(3f), amp * h * 0.64f)
+                val left = startX + i * (barW + gap)
+                val top = (h - barH) / 2f
+                canvas.drawRoundRect(left, top, left + barW, top + barH, barW / 2f, barW / 2f, voiceIndicatorPaint)
+            }
+        } else {
+            voiceTextPaint.apply {
+                color = accent
+                textSize = sp(14f)
+                alpha = (170 + pulse * 85).toInt()
+            }
+            val text = if (state == SherpaVoice.Phase.PREPARING) "准备中…" else "识别中…"
+            val fm = voiceTextPaint.fontMetrics
+            canvas.drawText(text, w / 2f, h / 2f - (fm.ascent + fm.descent) / 2f, voiceTextPaint)
         }
-        val centerX = width / 2f
-        val centerY = paddingTop + dp(4f)
-        val barWidth = dp(2f)
-        val barGap = dp(2f)
-        val heights = floatArrayOf(3f, 6f, 9f, 6f, 3f)
-        val waveWidth = barWidth * heights.size + barGap * (heights.size - 1)
-        val startX = centerX - waveWidth / 2f
-        heights.forEachIndexed { index, baseHeight ->
-            val modulation = 0.65f + 0.35f * kotlin.math.abs(
-                kotlin.math.sin(phase * 2f * Math.PI + index * 0.8f),
-            ).toFloat()
-            val barHeight = dp(baseHeight * modulation)
-            val left = startX + index * (barWidth + barGap)
-            canvas.drawRoundRect(
-                left,
-                centerY,
-                left + barWidth,
-                centerY + barHeight,
-                barWidth / 2f,
-                barWidth / 2f,
-                voiceIndicatorPaint,
-            )
-        }
-        postInvalidateDelayed(80L)
+        postInvalidateDelayed(50L)
     }
 
     private fun drawBackground(canvas: Canvas, k: Key) {

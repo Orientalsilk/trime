@@ -68,6 +68,24 @@ object SherpaVoice {
     private val sessionStarting = AtomicBoolean(false)
     private val stateListeners = CopyOnWriteArraySet<() -> Unit>()
 
+    /** What the voice session is doing, for the on-key indicator. */
+    enum class Phase { IDLE, PREPARING, LISTENING, FINISHING }
+
+    @Volatile
+    var phase: Phase = Phase.IDLE
+        private set
+
+    /** Smoothed microphone level in 0..1, drives the waveform. */
+    @Volatile
+    var level: Float = 0f
+        private set
+
+    private fun setPhase(value: Phase) {
+        phase = value
+        if (value != Phase.LISTENING) level = 0f
+        notifyStateChanged()
+    }
+
     fun addStateListener(listener: () -> Unit) {
         stateListeners.add(listener)
         listener()
@@ -131,6 +149,7 @@ object SherpaVoice {
 
     fun stop() {
         stopRequested = true
+        if (phase == Phase.LISTENING) setPhase(Phase.FINISHING)
     }
 
     private fun toast(
@@ -179,6 +198,7 @@ object SherpaVoice {
         }
         mainHandler.removeCallbacks(releaseIdle)
         stopRequested = false
+        phase = Phase.PREPARING
         listenJob =
             scope.launch(Dispatchers.IO) {
                 try {
@@ -201,7 +221,7 @@ object SherpaVoice {
                     }
                 } finally {
                     sessionStarting.set(false)
-                    notifyStateChanged()
+                    setPhase(Phase.IDLE)
                     mainHandler.postDelayed(releaseIdle, IDLE_RELEASE_MS)
                 }
             }
@@ -322,6 +342,7 @@ object SherpaVoice {
 
             audioRecord.startRecording()
             recordingStarted = true
+            setPhase(Phase.LISTENING)
             // Prefer in-field hint over a second toast so the keyboard feels quieter.
             showComposing(service, STATUS_LISTENING_HINT)
 
@@ -346,6 +367,13 @@ object SherpaVoice {
                 if (n == 0) continue
 
                 val samples = FloatArray(n) { buffer[it] / 32768f }
+                run {
+                    var sum = 0f
+                    for (x in samples) sum += x * x
+                    val rms = kotlin.math.sqrt(sum / n)
+                    val target = (rms * 7f).coerceIn(0f, 1f)
+                    level = if (target > level) target else level * 0.75f + target * 0.25f
+                }
                 stream.acceptWaveform(samples, SAMPLE_RATE)
                 while (rec.isReady(stream)) {
                     rec.decode(stream)
@@ -394,6 +422,7 @@ object SherpaVoice {
                 toast(context, "已达 5 分钟上限，正在结束")
             }
 
+            setPhase(Phase.FINISHING)
             // Flush remaining audio for a clean final result.
             stream.acceptWaveform(FloatArray(SAMPLE_RATE / 2), SAMPLE_RATE)
             stream.inputFinished()
