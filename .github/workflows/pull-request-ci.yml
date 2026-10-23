@@ -5,6 +5,9 @@
 name: Pull Request
 
 on:
+  push:
+    branches:
+      - develop
   pull_request:
     types:
       - opened
@@ -62,6 +65,10 @@ jobs:
         if: ${{ startsWith(matrix.os, 'ubuntu') }}
         run: |
           make style-lint
+
+      - name: Run unit tests
+        if: ${{ startsWith(matrix.os, 'ubuntu') }}
+        run: ./gradlew test
 
       - name: Calculate JNI cache hash
         id: cache-hash
