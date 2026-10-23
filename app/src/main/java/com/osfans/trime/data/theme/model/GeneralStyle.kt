@@ -35,6 +35,8 @@ data class GeneralStyle(
     val keyboardPaddingLand: Int = 0,
     val keyboardPaddingLandBottom: Int = 0,
     val keyFont: MaybeStringList = MaybeStringList.Empty,
+    /** Optional font for multi-character key labels; falls back to key_font when absent. */
+    val longTextFont: MaybeStringList = MaybeStringList.Empty,
     val keyBorder: Int = 0,
     val keyHeight: Int = 0,
     val keyLongTextSize: Float = 15f,
@@ -140,6 +142,7 @@ data class GeneralStyle(
                 "label_font",
                 "label_text_size",
                 "latin_font",
+                "long_text_font",
                 "popup_bottom_margin",
                 "popup_font",
                 "popup_height",
