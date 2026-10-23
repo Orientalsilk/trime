@@ -33,18 +33,22 @@ import timber.log.Timber
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Offline streaming voice input powered by sherpa-onnx (prebuilt libraries).
+ *
  * Tap the voice key to start listening, tap again to stop.
- * Partial results are shown as composing text, finished sentences are committed.
+ * Partial results are shown as composing text; finished sentences are committed.
+ * Listening also ends automatically after a short natural pause (more human-like).
  */
 object SherpaVoice {
     private const val SAMPLE_RATE = 16000
-    private const val STATUS_LOADING = "⏳ 正在加载语音模型，请稍候…"
-    private const val STATUS_LISTENING = "🎙 正在听，再点一次语音键结束"
-    private const val STATUS_RECOGNIZING = "⌛ 正在整理识别结果…"
-    private const val NO_RESULT_REMINDER_MS = 8_000L
+    private const val STATUS_LOADING = "正在准备语音识别…"
+    private const val STATUS_LISTENING_HINT = "…" // shown as composing while waiting for speech
+    private const val NO_SPEECH_REMINDER_MS = 6_000L
+    private const val AUTO_STOP_AFTER_SPEECH_SILENCE_MS = 2_500L
+    private const val AUTO_STOP_NO_SPEECH_MS = 12_000L
     private const val MAX_SECONDS = 300
     private const val IDLE_RELEASE_MS = 60_000L
     private const val MODEL_DIR_NAME = "sherpa-paraformer-zh-en"
@@ -60,6 +64,7 @@ object SherpaVoice {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val sessionStarting = AtomicBoolean(false)
 
     @Volatile
     private var activeToast: Toast? = null
@@ -102,7 +107,7 @@ object SherpaVoice {
         if (!nativeOk) return false
         if (isListening) {
             stop()
-            toast(service.applicationContext, "正在结束语音输入…")
+            toast(service.applicationContext, "正在结束…")
         } else {
             start(service)
         }
@@ -124,9 +129,11 @@ object SherpaVoice {
         }
     }
 
-    private fun modelDir(context: Context): File = File(context.getExternalFilesDir(null) ?: context.filesDir, MODEL_DIR_NAME)
+    private fun modelDir(context: Context): File =
+        File(context.getExternalFilesDir(null) ?: context.filesDir, MODEL_DIR_NAME)
 
-    private fun modelReady(dir: File): Boolean = MODEL_FILES.all { File(dir, it).let { file -> file.exists() && file.length() > 0 } }
+    private fun modelReady(dir: File): Boolean =
+        MODEL_FILES.all { File(dir, it).let { file -> file.exists() && file.length() > 0 } }
 
     private fun start(service: TrimeInputMethodService) {
         val context = service.applicationContext
@@ -134,7 +141,7 @@ object SherpaVoice {
             ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) !=
             PackageManager.PERMISSION_GRANTED
         ) {
-            toast(context, "请允许麦克风权限；授权后回到键盘，再点一次语音键", Toast.LENGTH_LONG)
+            toast(context, "需要麦克风权限。授权后回到键盘，再点一次语音键", Toast.LENGTH_LONG)
             context.startActivity(
                 Intent(context, MicPermissionActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
@@ -147,67 +154,109 @@ object SherpaVoice {
             downloadModel(context, dir)
             return
         }
+        // Avoid overlapping sessions when the key is tapped quickly.
+        if (!sessionStarting.compareAndSet(false, true)) {
+            return
+        }
+        if (isListening) {
+            sessionStarting.set(false)
+            return
+        }
         mainHandler.removeCallbacks(releaseIdle)
         stopRequested = false
         listenJob =
             scope.launch(Dispatchers.IO) {
-                runCatching {
-                    if (!modelReady(dir)) {
-                        toast(context, "首次使用，正在准备语音模型…")
-                        installBundledModel(context, dir)
-                    }
-                    runSession(service, dir)
-                }
-                    .onFailure {
+                try {
+                    runCatching {
+                        if (!modelReady(dir)) {
+                            toast(context, "首次使用，正在解压语音模型…")
+                            installBundledModel(context, dir)
+                        }
+                        runSession(service, dir)
+                    }.onFailure {
                         Timber.e(it, "voice session failed")
                         showComposing(service, "")
-                        val message = when (it) {
-                            is SecurityException -> "无法访问麦克风，请检查应用权限"
-                            is IllegalStateException -> "录音暂时不可用，请关闭其他正在使用麦克风的应用后重试"
-                            else -> "语音输入遇到问题，请重试；如果反复出现，请检查语音模型是否完整"
-                        }
+                        val message =
+                            when (it) {
+                                is SecurityException -> "无法访问麦克风，请在系统设置中允许同文使用麦克风"
+                                is IllegalStateException -> "麦克风被占用，请关闭其他正在录音的应用后重试"
+                                else -> "语音识别出了点问题，请再试一次"
+                            }
                         toast(context, message, Toast.LENGTH_LONG)
                     }
-                mainHandler.postDelayed(releaseIdle, IDLE_RELEASE_MS)
+                } finally {
+                    sessionStarting.set(false)
+                    mainHandler.postDelayed(releaseIdle, IDLE_RELEASE_MS)
+                }
             }
     }
 
-    private fun getRecognizer(dir: File): OnlineRecognizer = synchronized(this) {
-        recognizer ?: run {
-            val config =
-                OnlineRecognizerConfig(
-                    featConfig = FeatureConfig(sampleRate = SAMPLE_RATE, featureDim = 80),
-                    modelConfig =
-                    OnlineModelConfig(
-                        paraformer =
-                        OnlineParaformerModelConfig(
-                            encoder = File(dir, ENCODER).absolutePath,
-                            decoder = File(dir, DECODER).absolutePath,
-                        ),
-                        tokens = File(dir, TOKENS).absolutePath,
-                        numThreads = 2,
-                        provider = "cpu",
-                        modelType = "paraformer",
-                    ),
-                    enableEndpoint = true,
-                    decodingMethod = "greedy_search",
-                )
-            OnlineRecognizer(config = config).also { recognizer = it }
+    private fun getRecognizer(dir: File): OnlineRecognizer =
+        synchronized(this) {
+            recognizer ?: run {
+                val config =
+                    OnlineRecognizerConfig(
+                        featConfig = FeatureConfig(sampleRate = SAMPLE_RATE, featureDim = 80),
+                        modelConfig =
+                            OnlineModelConfig(
+                                paraformer =
+                                    OnlineParaformerModelConfig(
+                                        encoder = File(dir, ENCODER).absolutePath,
+                                        decoder = File(dir, DECODER).absolutePath,
+                                    ),
+                                tokens = File(dir, TOKENS).absolutePath,
+                                numThreads = 2,
+                                provider = "cpu",
+                                modelType = "paraformer",
+                            ),
+                        enableEndpoint = true,
+                        decodingMethod = "greedy_search",
+                    )
+                OnlineRecognizer(config = config).also { recognizer = it }
+            }
         }
-    }
 
     private fun commit(
         service: TrimeInputMethodService,
         text: String,
     ) {
-        mainHandler.post { service.currentInputConnection?.commitText(text, 1) }
+        if (text.isBlank()) return
+        mainHandler.post {
+            val ic = service.currentInputConnection ?: return@post
+            // Finish any composing region first so partial text is not left behind.
+            runCatching { ic.finishComposingText() }
+            ic.commitText(text, 1)
+        }
     }
 
     private fun showComposing(
         service: TrimeInputMethodService,
         text: String,
     ) {
-        mainHandler.post { service.currentInputConnection?.setComposingText(text, 1) }
+        mainHandler.post {
+            val ic = service.currentInputConnection ?: return@post
+            if (text.isEmpty()) {
+                runCatching { ic.finishComposingText() }
+            } else {
+                ic.setComposingText(text, 1)
+            }
+        }
+    }
+
+    /** Insert a space before [next] when the previous committed text ends with a Latin letter/digit. */
+    private fun withOptionalSpace(
+        previous: String,
+        next: String,
+    ): String {
+        if (previous.isEmpty() || next.isEmpty()) return next
+        val last = previous.last()
+        val first = next.first()
+        val needSpace =
+            last.isLetterOrDigit() &&
+                first.isLetterOrDigit() &&
+                (last.code < 0x2E80) &&
+                (first.code < 0x2E80)
+        return if (needSpace) " $next" else next
     }
 
     private suspend fun runSession(
@@ -227,6 +276,10 @@ object SherpaVoice {
                     AudioFormat.CHANNEL_IN_MONO,
                     AudioFormat.ENCODING_PCM_16BIT,
                 )
+            if (minBuf <= 0) {
+                toast(context, "当前设备不支持语音录音")
+                return
+            }
             val audioRecord =
                 AudioRecord(
                     MediaRecorder.AudioSource.VOICE_RECOGNITION,
@@ -243,19 +296,34 @@ object SherpaVoice {
 
             val buffer = ShortArray(SAMPLE_RATE / 10)
             var lastShown = ""
+            var lastCommitted = ""
             var committedAny = false
-            var lastRecognitionAt = SystemClock.elapsedRealtime()
+            var heardSpeech = false
+            var lastActivityAt = SystemClock.elapsedRealtime()
             var silenceReminderShown = false
             val startMs = SystemClock.elapsedRealtime()
 
             audioRecord.startRecording()
             recordingStarted = true
-            toast(context, STATUS_LISTENING)
+            // Prefer in-field hint over a second toast so the keyboard feels quieter.
+            showComposing(service, STATUS_LISTENING_HINT)
+
             while (
-                scope.isActive &&
+                isActive &&
                 !stopRequested &&
                 SystemClock.elapsedRealtime() - startMs < MAX_SECONDS * 1000L
             ) {
+                val now = SystemClock.elapsedRealtime()
+
+                // Natural end-of-utterance: stop after a short pause once something was recognized.
+                if (heardSpeech && now - lastActivityAt >= AUTO_STOP_AFTER_SPEECH_SILENCE_MS) {
+                    break
+                }
+                // No speech at all for a while → stop instead of hanging forever.
+                if (!heardSpeech && now - lastActivityAt >= AUTO_STOP_NO_SPEECH_MS) {
+                    break
+                }
+
                 val n = audioRecord.read(buffer, 0, buffer.size)
                 if (n < 0) error("microphone read failed: $n")
                 if (n == 0) continue
@@ -266,35 +334,39 @@ object SherpaVoice {
                     rec.decode(stream)
                 }
 
-                val text = rec.getResult(stream).text
+                val text = rec.getResult(stream).text.trim()
                 if (rec.isEndpoint(stream)) {
                     if (text.isNotBlank()) {
-                        commit(service, text)
+                        val toCommit = withOptionalSpace(lastCommitted, text)
+                        commit(service, toCommit)
+                        lastCommitted = text
                         committedAny = true
-                        lastRecognitionAt = SystemClock.elapsedRealtime()
+                        heardSpeech = true
+                        lastActivityAt = SystemClock.elapsedRealtime()
                         silenceReminderShown = false
                     }
                     lastShown = ""
                     rec.reset(stream)
-                    showComposing(service, "")
+                    showComposing(service, STATUS_LISTENING_HINT)
                 } else if (text != lastShown) {
                     lastShown = text
                     if (text.isNotBlank()) {
-                        lastRecognitionAt = SystemClock.elapsedRealtime()
+                        heardSpeech = true
+                        lastActivityAt = SystemClock.elapsedRealtime()
                         silenceReminderShown = false
                         showComposing(service, text)
-                    } else {
-                        showComposing(service, "")
+                    } else if (lastShown.isEmpty()) {
+                        showComposing(service, STATUS_LISTENING_HINT)
                     }
                 }
 
                 if (
-                    lastShown.isBlank() &&
+                    !heardSpeech &&
                     !silenceReminderShown &&
-                    SystemClock.elapsedRealtime() - lastRecognitionAt >= NO_RESULT_REMINDER_MS
+                    SystemClock.elapsedRealtime() - lastActivityAt >= NO_SPEECH_REMINDER_MS
                 ) {
                     silenceReminderShown = true
-                    toast(context, "暂未识别到文字，请靠近麦克风并清晰说话")
+                    toast(context, "还没听到内容，请靠近麦克风、说完后再稍停一下")
                 }
             }
 
@@ -302,25 +374,29 @@ object SherpaVoice {
                 !stopRequested &&
                 SystemClock.elapsedRealtime() - startMs >= MAX_SECONDS * 1000L
             ) {
-                toast(context, "语音输入已达到 5 分钟时长上限，正在结束…")
+                toast(context, "已达 5 分钟上限，正在结束")
             }
 
-            toast(context, STATUS_RECOGNIZING)
+            // Flush remaining audio for a clean final result.
             stream.acceptWaveform(FloatArray(SAMPLE_RATE / 2), SAMPLE_RATE)
             stream.inputFinished()
             while (rec.isReady(stream)) {
                 rec.decode(stream)
             }
-            val finalText = rec.getResult(stream).text.ifBlank { lastShown }
+            val finalText = rec.getResult(stream).text.trim().ifBlank { lastShown.trim() }
             if (finalText.isNotBlank()) {
-                commit(service, finalText)
-                committedAny = true
+                val toCommit = withOptionalSpace(lastCommitted, finalText)
+                // Avoid re-committing the exact same endpoint text when auto-stop races endpoint.
+                if (toCommit.trim() != lastCommitted.trim()) {
+                    commit(service, toCommit)
+                    committedAny = true
+                }
             }
             showComposing(service, "")
             if (committedAny) {
-                toast(context, "✓ 语音输入完成")
+                toast(context, "已完成")
             } else {
-                toast(context, "未识别到语音内容，请重试")
+                toast(context, "没有识别到内容，点语音键再说一次")
             }
         } finally {
             record?.let {
@@ -334,10 +410,10 @@ object SherpaVoice {
     }
 
     /** The model may be packaged inside the APK (assets/MODEL_DIR_NAME). */
-    private fun hasBundledModel(context: Context): Boolean = runCatching {
-        context.assets.list(MODEL_DIR_NAME)?.toSet()?.containsAll(MODEL_FILES) == true
-    }
-        .getOrDefault(false)
+    private fun hasBundledModel(context: Context): Boolean =
+        runCatching {
+            context.assets.list(MODEL_DIR_NAME)?.toSet()?.containsAll(MODEL_FILES) == true
+        }.getOrDefault(false)
 
     private fun installBundledModel(
         context: Context,
@@ -364,7 +440,11 @@ object SherpaVoice {
             return
         }
         downloading = true
-        toast(context, "首次使用需要下载约 230MB 的语音模型，请保持网络畅通；下载完成后即可离线使用", Toast.LENGTH_LONG)
+        toast(
+            context,
+            "首次使用需下载约 230MB 语音模型（仅一次），完成后可完全离线使用",
+            Toast.LENGTH_LONG,
+        )
         scope.launch(Dispatchers.IO) {
             try {
                 dir.mkdirs()
@@ -373,10 +453,10 @@ object SherpaVoice {
                     if (target.exists() && target.length() > 0) continue
                     downloadFile(context, name, target)
                 }
-                toast(context, "语音模型已准备好，回到键盘再点一次语音键即可开始", Toast.LENGTH_LONG)
+                toast(context, "模型已就绪，回到键盘再点一次语音键即可", Toast.LENGTH_LONG)
             } catch (e: Throwable) {
                 Timber.e(e, "model download failed")
-                toast(context, "语音模型下载失败，请检查网络后重试", Toast.LENGTH_LONG)
+                toast(context, "模型下载失败，请检查网络后重试", Toast.LENGTH_LONG)
             } finally {
                 downloading = false
             }
