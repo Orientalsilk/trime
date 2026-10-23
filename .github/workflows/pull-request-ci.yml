@@ -15,6 +15,10 @@ on:
       # pull request's head branch was updated
       - synchronize
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CI_NAME: Pull Request CI
 jobs:
@@ -23,11 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-26.04
-          - macos-26
-          - macos-26-intel
-          - windows-2025
+        os: ${{ github.event_name == 'push' && fromJSON('["ubuntu-26.04"]') || fromJSON('["ubuntu-26.04", "macos-26", "macos-26-intel", "windows-2025"]') }}
     env:
       BUILD_ABI: armeabi-v7a,arm64-v8a,x86,x86_64
     steps:
@@ -65,7 +65,7 @@ jobs:
         if: ${{ startsWith(matrix.os, 'ubuntu') }}
         run: |
           ./gradlew spotlessApply
-          git diff -- app/src/main/java/com/osfans/trime/voice/SherpaVoice.kt
+          git diff -- app/src/main/java/com/osfans/trime/voice/
           make style-lint
 
       - name: Run unit tests
@@ -73,11 +73,13 @@ jobs:
         run: ./gradlew test
 
       - name: Calculate JNI cache hash
+        if: ${{ github.event_name == 'pull_request' }}
         id: cache-hash
         run: |
             ./gradlew :app:calculateNativeCacheHash
 
       - name: Fetch JNI cache
+        if: ${{ github.event_name == 'pull_request' }}
         uses: actions/cache@v6
         id: jni-cache
         with:
@@ -85,20 +87,22 @@ jobs:
           key: ${{ matrix.os }}-trime-jni-debug-${{ steps.cache-hash.outputs.native-cache-hash }}
 
       - name: Fetch submodules
-        if: ${{ !steps.jni-cache.outputs.cache-hit }}
+        if: ${{ github.event_name == 'pull_request' && !steps.jni-cache.outputs.cache-hit }}
         run: |
           git submodule update --init --recursive
 
       - name: Build debug Trime
+        if: ${{ github.event_name == 'pull_request' }}
         run: |
           make debug
 
       - name: Add JNI cache
-        if: ${{ !steps.jni-cache.outputs.cache-hit }}
+        if: ${{ github.event_name == 'pull_request' && !steps.jni-cache.outputs.cache-hit }}
         shell: bash
         run: cp -R app/build/intermediates/merged_native_libs/debug/mergeDebugNativeLibs/out/lib app/prebuilt
 
       - name: Upload APK artifact
+        if: ${{ github.event_name == 'pull_request' }}
         uses: actions/upload-artifact@v7
         with:
           name: trime-${{ matrix.os }}
