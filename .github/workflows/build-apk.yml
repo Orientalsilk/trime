@@ -96,6 +96,17 @@ jobs:
         run: |
           git submodule update --init --recursive
 
+      - name: Auto-format Kotlin (spotlessApply) and commit
+        continue-on-error: true
+        run: |
+          ./gradlew spotlessApply -q || true
+          if ! git diff --quiet; then
+            git config user.name "github-actions"
+            git config user.email "actions@github.com"
+            git commit -am "style: spotlessApply"
+            git push origin HEAD:${GITHUB_REF#refs/heads/}
+          fi
+
       - name: Style, unit tests and lint (report only)
         continue-on-error: true
         run: |
@@ -109,17 +120,6 @@ jobs:
           msg=$(grep -E "^e: |error:|What went wrong|Caused by|Execution failed|FAILED|Lint found|Violations|tests completed" /tmp/check.log | head -30 | cut -c1-300 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
           lint=$(python3 .github/scripts/lint_errors.py)
           echo "::warning title=CHECK-RESULT::$rcs%0A$lint%0A$msg"
-
-      - name: Auto-format Kotlin (spotlessApply) and commit
-        continue-on-error: true
-        run: |
-          ./gradlew spotlessApply -q || true
-          if ! git diff --quiet; then
-            git config user.name "github-actions"
-            git config user.email "actions@github.com"
-            git commit -am "style: spotlessApply"
-            git push origin HEAD:${GITHUB_REF#refs/heads/}
-          fi
 
       - name: Build debug Trime
         run: |
