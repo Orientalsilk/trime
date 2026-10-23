@@ -89,6 +89,7 @@ enum class ColorKey {
             mapOf(
                 CANDIDATE_TEXT_COLOR to TEXT_COLOR,
                 COMMENT_TEXT_COLOR to CANDIDATE_TEXT_COLOR,
+                CANDIDATE_BORDER_COLOR to BORDER_COLOR,
                 BORDER_COLOR to BACK_COLOR,
                 CANDIDATE_SEPARATOR_COLOR to BORDER_COLOR,
                 HILITED_TEXT_COLOR to TEXT_COLOR,
