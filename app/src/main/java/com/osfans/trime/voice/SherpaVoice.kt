@@ -31,8 +31,6 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.io.File
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -57,11 +55,6 @@ object SherpaVoice {
     private const val DECODER = "decoder.int8.onnx"
     private const val TOKENS = "tokens.txt"
     private val MODEL_FILES = listOf(ENCODER, DECODER, TOKENS)
-    private val MODEL_BASE_URLS =
-        listOf(
-            "https://hf-mirror.com/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/main/",
-            "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/main/",
-        )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -183,7 +176,7 @@ object SherpaVoice {
         val dir = modelDir(context)
         val bundled = hasBundledModel(context)
         if (!modelReady(dir) && !bundled) {
-            downloadModel(context, dir)
+            toast(context, "语音模型缺失，请重新安装完整版 APK", Toast.LENGTH_LONG)
             return
         }
         // Avoid overlapping sessions when the key is tapped quickly.
@@ -477,90 +470,5 @@ object SherpaVoice {
             target.delete()
             check(tmp.renameTo(target)) { "无法写入 $name" }
         }
-    }
-
-    private fun downloadModel(
-        context: Context,
-        dir: File,
-    ) {
-        if (downloading) {
-            toast(context, "语音模型正在下载，请稍候…")
-            return
-        }
-        downloading = true
-        toast(
-            context,
-            "首次使用需下载约 230MB 语音模型（仅一次），完成后可完全离线使用",
-            Toast.LENGTH_LONG,
-        )
-        scope.launch(Dispatchers.IO) {
-            try {
-                dir.mkdirs()
-                for (name in MODEL_FILES) {
-                    val target = File(dir, name)
-                    if (target.exists() && target.length() > 0) continue
-                    downloadFile(context, name, target)
-                }
-                toast(context, "模型已就绪，回到键盘再点一次语音键即可", Toast.LENGTH_LONG)
-            } catch (e: Throwable) {
-                Timber.e(e, "model download failed")
-                toast(context, "模型下载失败，请检查网络后重试", Toast.LENGTH_LONG)
-            } finally {
-                downloading = false
-            }
-        }
-    }
-
-    private fun downloadFile(
-        context: Context,
-        name: String,
-        target: File,
-    ) {
-        var lastError: Throwable? = null
-        for (base in MODEL_BASE_URLS) {
-            val part = File(target.parentFile, "$name.part")
-            var connection: HttpURLConnection? = null
-            try {
-                val conn = URL(base + name).openConnection() as HttpURLConnection
-                connection = conn
-                conn.connectTimeout = 15_000
-                conn.readTimeout = 30_000
-                conn.instanceFollowRedirects = true
-                conn.connect()
-                if (conn.responseCode !in 200..299) error("HTTP ${conn.responseCode}")
-                val total = conn.contentLength.toLong()
-                var done = 0L
-                var lastPercent = -1
-                conn.inputStream.use { input ->
-                    part.outputStream().use { output ->
-                        val buf = ByteArray(64 * 1024)
-                        while (true) {
-                            val n = input.read(buf)
-                            if (n < 0) break
-                            output.write(buf, 0, n)
-                            done += n
-                            if (total > 0) {
-                                val percent = (done * 100 / total).toInt() / 25 * 25
-                                if (percent != lastPercent) {
-                                    lastPercent = percent
-                                    toast(context, "下载 $name：$percent%")
-                                }
-                            }
-                        }
-                    }
-                }
-                if (part.length() == 0L) error("empty file")
-                if (total > 0 && done != total) error("incomplete download: $done/$total bytes")
-                if (!part.renameTo(target)) error("cannot save $name")
-                return
-            } catch (e: Throwable) {
-                lastError = e
-                part.delete()
-                Timber.w(e, "download $name from $base failed")
-            } finally {
-                connection?.disconnect()
-            }
-        }
-        throw lastError ?: IllegalStateException("download failed")
     }
 }
