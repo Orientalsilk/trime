@@ -27,7 +27,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.io.File
@@ -45,7 +45,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 object SherpaVoice {
     private const val SAMPLE_RATE = 16000
     private const val STATUS_LOADING = "正在准备语音识别…"
-    private const val STATUS_LISTENING_HINT = "…" // shown as composing while waiting for speech
+    private const val STATUS_LISTENING_HINT = "…"
     private const val NO_SPEECH_REMINDER_MS = 6_000L
     private const val AUTO_STOP_AFTER_SPEECH_SILENCE_MS = 2_500L
     private const val AUTO_STOP_NO_SPEECH_MS = 12_000L
@@ -309,7 +309,7 @@ object SherpaVoice {
             showComposing(service, STATUS_LISTENING_HINT)
 
             while (
-                isActive &&
+                currentCoroutineContext()[Job]?.isActive != false &&
                 !stopRequested &&
                 SystemClock.elapsedRealtime() - startMs < MAX_SECONDS * 1000L
             ) {
@@ -319,7 +319,7 @@ object SherpaVoice {
                 if (heardSpeech && now - lastActivityAt >= AUTO_STOP_AFTER_SPEECH_SILENCE_MS) {
                     break
                 }
-                // No speech at all for a while → stop instead of hanging forever.
+                // No speech at all for a while, stop instead of hanging forever.
                 if (!heardSpeech && now - lastActivityAt >= AUTO_STOP_NO_SPEECH_MS) {
                     break
                 }
