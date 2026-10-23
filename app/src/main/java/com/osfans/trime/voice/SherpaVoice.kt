@@ -33,6 +33,7 @@ import timber.log.Timber
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.CopyOnWriteArraySet
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -65,6 +66,20 @@ object SherpaVoice {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val mainHandler = Handler(Looper.getMainLooper())
     private val sessionStarting = AtomicBoolean(false)
+    private val stateListeners = CopyOnWriteArraySet<() -> Unit>()
+
+    fun addStateListener(listener: () -> Unit) {
+        stateListeners.add(listener)
+        listener()
+    }
+
+    fun removeStateListener(listener: () -> Unit) {
+        stateListeners.remove(listener)
+    }
+
+    private fun notifyStateChanged() {
+        stateListeners.forEach { listener -> runCatching { listener() } }
+    }
 
     @Volatile
     private var activeToast: Toast? = null
@@ -186,9 +201,11 @@ object SherpaVoice {
                     }
                 } finally {
                     sessionStarting.set(false)
+                    notifyStateChanged()
                     mainHandler.postDelayed(releaseIdle, IDLE_RELEASE_MS)
                 }
             }
+        notifyStateChanged()
     }
 
     private fun getRecognizer(dir: File): OnlineRecognizer =
