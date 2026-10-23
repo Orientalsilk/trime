@@ -60,6 +60,12 @@ jobs:
           path: "app/prebuilt"
           key: linux-trime-jni-debug-${{ steps.cache-hash.outputs.native-cache-hash }}
 
+      - name: Remove duplicate sherpa libs from cached prebuilt
+        shell: bash
+        run: |
+          # sherpa-onnx libs come from app/src/main/jniLibs; a stale copy in the cache would collide
+          rm -f app/prebuilt/*/libonnxruntime.so app/prebuilt/*/libsherpa-onnx-*.so || true
+
       - name: Fetch submodules
         if: ${{ !steps.jni-cache.outputs.cache-hit }}
         run: |
@@ -79,7 +85,9 @@ jobs:
       - name: Add JNI cache
         if: ${{ !steps.jni-cache.outputs.cache-hit }}
         shell: bash
-        run: cp -R app/build/intermediates/merged_native_libs/debug/mergeDebugNativeLibs/out/lib app/prebuilt
+        run: |
+          cp -R app/build/intermediates/merged_native_libs/debug/mergeDebugNativeLibs/out/lib app/prebuilt
+          rm -f app/prebuilt/*/libonnxruntime.so app/prebuilt/*/libsherpa-onnx-*.so
 
       - name: Upload APK artifact (ARM64_V8A only)
         uses: actions/upload-artifact@v7
