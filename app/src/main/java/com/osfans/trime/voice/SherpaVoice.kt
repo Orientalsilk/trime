@@ -46,7 +46,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 object SherpaVoice {
     private const val SAMPLE_RATE = 16000
     private const val STATUS_LOADING = "正在准备语音识别…"
-    private const val STATUS_LISTENING_HINT = "…"
+    private const val STATUS_LISTENING_HINT = ""
     private const val NO_SPEECH_REMINDER_MS = 6_000L
     private const val AUTO_STOP_AFTER_SPEECH_SILENCE_MS = 2_500L
     private const val AUTO_STOP_NO_SPEECH_MS = 12_000L
@@ -273,7 +273,11 @@ object SherpaVoice {
         mainHandler.post {
             val ic = service.currentInputConnection ?: return@post
             if (text.isEmpty()) {
-                runCatching { ic.finishComposingText() }
+                // Clear the preview first: finishing it would commit it as real text.
+                runCatching {
+                    ic.setComposingText("", 1)
+                    ic.finishComposingText()
+                }
             } else {
                 ic.setComposingText(text, 1)
             }
