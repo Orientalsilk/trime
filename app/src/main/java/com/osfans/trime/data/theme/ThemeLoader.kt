@@ -144,12 +144,13 @@ object ThemeLoader {
         themeId: String,
         mapping: YamlMap,
     ): ThemeLoadResult {
-        val theme = ThemeYaml.parser.decodeFromYamlNode<Theme>(mapping)
+        val compatibleMapping = LegacyThemeCompatibility.normalize(mapping)
+        val theme = ThemeYaml.parser.decodeFromYamlNode<Theme>(compatibleMapping)
         if (theme.presetColorSchemes.isEmpty()) {
             return ThemeLoadResult.Failure(themeId, ThemeLoadError.NoColorScheme(themeId))
         }
         val findings =
-            runCatching { ThemeDiagnostics.lint(theme, mapping) }
+            runCatching { ThemeDiagnostics.lint(theme, compatibleMapping) }
                 .onFailure { Timber.w(it, "Theme '%s': diagnostics failed", themeId) }
                 .getOrNull()
         findings?.let { ThemeDiagnostics.log(themeId, it) }
