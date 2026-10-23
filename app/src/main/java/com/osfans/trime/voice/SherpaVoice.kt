@@ -126,7 +126,8 @@ object SherpaVoice {
             return
         }
         val dir = modelDir(context)
-        if (!modelReady(dir)) {
+        val bundled = hasBundledModel(context)
+        if (!modelReady(dir) && !bundled) {
             downloadModel(context, dir)
             return
         }
@@ -134,7 +135,13 @@ object SherpaVoice {
         stopRequested = false
         listenJob =
             scope.launch(Dispatchers.IO) {
-                runCatching { runSession(service, dir) }
+                runCatching {
+                    if (!modelReady(dir)) {
+                        toast(context, "首次使用，正在准备语音模型…")
+                        installBundledModel(context, dir)
+                    }
+                    runSession(service, dir)
+                }
                     .onFailure {
                         Timber.e(it, "voice session failed")
                         toast(context, "语音识别出错：${it.message}")
@@ -247,6 +254,27 @@ object SherpaVoice {
             showComposing(service, "")
         }
         stream.release()
+    }
+
+    /** The model may be packaged inside the APK (assets/MODEL_DIR_NAME). */
+    private fun hasBundledModel(context: Context): Boolean =
+        runCatching { context.assets.list(MODEL_DIR_NAME)?.toSet()?.containsAll(MODEL_FILES) == true }
+            .getOrDefault(false)
+
+    private fun installBundledModel(
+        context: Context,
+        dir: File,
+    ) {
+        dir.mkdirs()
+        for (name in MODEL_FILES) {
+            val tmp = File(dir, "$name.part")
+            context.assets.open("$MODEL_DIR_NAME/$name").use { input ->
+                tmp.outputStream().use { output -> input.copyTo(output, 1 shl 20) }
+            }
+            val target = File(dir, name)
+            target.delete()
+            check(tmp.renameTo(target)) { "无法写入 $name" }
+        }
     }
 
     private fun downloadModel(

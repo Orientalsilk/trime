@@ -41,6 +41,11 @@ android {
         archivesName = "${android.defaultConfig.applicationId}-$buildVersionName"
     }
 
+    androidResources {
+        // model files are large and already compressed; keep them stored for fast first-run copy
+        noCompress += listOf("onnx")
+    }
+
     buildFeatures {
         buildConfig = true
         viewBinding = true

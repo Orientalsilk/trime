@@ -47,6 +47,18 @@ jobs:
           cp /tmp/sherpa/jniLibs/arm64-v8a/*.so app/src/main/jniLibs/arm64-v8a/
           ls -la app/src/main/jniLibs/arm64-v8a/
 
+      - name: Download voice model into assets (bundled in APK)
+        run: |
+          D=app/src/main/assets/sherpa-paraformer-zh-en
+          mkdir -p $D
+          for f in encoder.int8.onnx decoder.int8.onnx tokens.txt; do
+            for base in https://huggingface.co https://hf-mirror.com; do
+              if curl -fL --retry 3 -o "$D/$f" "$base/csukuangfj/sherpa-onnx-streaming-paraformer-bilingual-zh-en/resolve/main/$f"; then break; fi
+            done
+            test -s "$D/$f"
+          done
+          ls -la $D
+
       - name: Install Android NDK
         run: |
           sdkmanager --install "cmake;3.31.6"
