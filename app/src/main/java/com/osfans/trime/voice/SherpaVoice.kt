@@ -41,9 +41,8 @@ import java.net.URL
  */
 object SherpaVoice {
     private const val SAMPLE_RATE = 16000
-    private const val STATUS_LOADING = "⏳ 正在加载语音模型…"
-    private const val STATUS_LISTENING = "🎙 请开始说话…"
-    private const val STATUS_WAITING = "🎙 暂未识别到文字，请继续说话…"
+    private const val STATUS_LOADING = "⏳ 正在加载语音模型，请稍候…"
+    private const val STATUS_LISTENING = "🎙 正在听，再点一次语音键结束"
     private const val STATUS_RECOGNIZING = "⌛ 正在整理识别结果…"
     private const val NO_RESULT_REMINDER_MS = 8_000L
     private const val MAX_SECONDS = 300
@@ -200,45 +199,57 @@ object SherpaVoice {
         dir: File,
     ) {
         val context = service.applicationContext
-        showComposing(service, STATUS_LOADING)
-        toast(context, "正在加载语音模型，请稍候…")
+        toast(context, STATUS_LOADING)
         val rec = getRecognizer(dir)
         val stream = rec.createStream()
-        val minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
-        val record =
-            AudioRecord(
-                MediaRecorder.AudioSource.VOICE_RECOGNITION,
-                SAMPLE_RATE,
-                AudioFormat.CHANNEL_IN_MONO,
-                AudioFormat.ENCODING_PCM_16BIT,
-                maxOf(minBuf, SAMPLE_RATE),
-            )
-        if (record.state != AudioRecord.STATE_INITIALIZED) {
-            record.release()
-            stream.release()
-            showComposing(service, "")
-            toast(context, "无法打开麦克风")
-            return
-        }
-        val buffer = ShortArray(SAMPLE_RATE / 10)
-        var lastShown = ""
-        var committedAny = false
-        var lastRecognitionAt = SystemClock.elapsedRealtime()
-        var silenceReminderShown = false
-        val startMs = SystemClock.elapsedRealtime()
+        var record: AudioRecord? = null
+        var recordingStarted = false
         try {
-            record.startRecording()
-            showComposing(service, STATUS_LISTENING)
+            val minBuf =
+                AudioRecord.getMinBufferSize(
+                    SAMPLE_RATE,
+                    AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT,
+                )
+            val audioRecord =
+                AudioRecord(
+                    MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                    SAMPLE_RATE,
+                    AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT,
+                    maxOf(minBuf, SAMPLE_RATE),
+                )
+            record = audioRecord
+            if (audioRecord.state != AudioRecord.STATE_INITIALIZED) {
+                toast(context, "无法打开麦克风")
+                return
+            }
+
+            val buffer = ShortArray(SAMPLE_RATE / 10)
+            var lastShown = ""
+            var committedAny = false
+            var lastRecognitionAt = SystemClock.elapsedRealtime()
+            var silenceReminderShown = false
+            val startMs = SystemClock.elapsedRealtime()
+
+            audioRecord.startRecording()
+            recordingStarted = true
             toast(context, "🎙 正在听，再点一次语音键结束")
-            while (scope.isActive && !stopRequested && SystemClock.elapsedRealtime() - startMs < MAX_SECONDS * 1000L) {
-                val n = record.read(buffer, 0, buffer.size)
+            while (
+                scope.isActive &&
+                !stopRequested &&
+                SystemClock.elapsedRealtime() - startMs < MAX_SECONDS * 1000L
+            ) {
+                val n = audioRecord.read(buffer, 0, buffer.size)
                 if (n < 0) break
                 if (n == 0) continue
+
                 val samples = FloatArray(n) { buffer[it] / 32768f }
                 stream.acceptWaveform(samples, SAMPLE_RATE)
                 while (rec.isReady(stream)) {
                     rec.decode(stream)
                 }
+
                 val text = rec.getResult(stream).text
                 if (rec.isEndpoint(stream)) {
                     if (text.isNotBlank()) {
@@ -249,7 +260,7 @@ object SherpaVoice {
                     lastRecognitionAt = SystemClock.elapsedRealtime()
                     silenceReminderShown = false
                     rec.reset(stream)
-                    showComposing(service, STATUS_LISTENING)
+                    showComposing(service, "")
                 } else if (text != lastShown) {
                     lastShown = text
                     if (text.isNotBlank()) {
@@ -257,43 +268,52 @@ object SherpaVoice {
                         silenceReminderShown = false
                         showComposing(service, text)
                     } else {
-                        showComposing(service, STATUS_LISTENING)
+                        showComposing(service, "")
                     }
                 }
-                if (lastShown.isBlank() && !silenceReminderShown &&
+
+                if (
+                    lastShown.isBlank() &&
+                    !silenceReminderShown &&
                     SystemClock.elapsedRealtime() - lastRecognitionAt >= NO_RESULT_REMINDER_MS
                 ) {
                     silenceReminderShown = true
-                    showComposing(service, STATUS_WAITING)
                     toast(context, "暂未识别到文字，请靠近麦克风并清晰说话")
                 }
             }
+
+            if (
+                !stopRequested &&
+                SystemClock.elapsedRealtime() - startMs >= MAX_SECONDS * 1000L
+            ) {
+                toast(context, "语音输入已达到 5 分钟时长上限，正在结束…")
+            }
+
+            toast(context, STATUS_RECOGNIZING)
+            stream.acceptWaveform(FloatArray(SAMPLE_RATE / 2), SAMPLE_RATE)
+            stream.inputFinished()
+            while (rec.isReady(stream)) {
+                rec.decode(stream)
+            }
+            val finalText = rec.getResult(stream).text
+            if (finalText.isNotBlank()) {
+                commit(service, finalText)
+                committedAny = true
+            }
+            showComposing(service, "")
+            if (committedAny) {
+                toast(context, "✓ 语音输入完成")
+            } else {
+                toast(context, "未识别到语音内容，请重试")
+            }
         } finally {
-            runCatching { record.stop() }
-            record.release()
-        }
-        showComposing(service, STATUS_RECOGNIZING)
-        toast(context, STATUS_RECOGNIZING)
-        if (!stopRequested && SystemClock.elapsedRealtime() - startMs >= MAX_SECONDS * 1000L) {
-            toast(context, "语音输入已达到 5 分钟时长上限，正在结束…")
-        }
-        // Flush the remaining audio.
-        stream.acceptWaveform(FloatArray(SAMPLE_RATE / 2), SAMPLE_RATE)
-        stream.inputFinished()
-        while (rec.isReady(stream)) {
-            rec.decode(stream)
-        }
-        val finalText = rec.getResult(stream).text
-        if (finalText.isNotBlank()) {
-            commit(service, finalText)
-            committedAny = true
-        }
-        showComposing(service, "")
-        stream.release()
-        if (committedAny) {
-            toast(context, "✓ 语音输入完成")
-        } else {
-            toast(context, "未识别到语音内容，请重试")
+            record?.let {
+                if (recordingStarted) {
+                    runCatching { it.stop() }
+                }
+                it.release()
+            }
+            stream.release()
         }
     }
 
