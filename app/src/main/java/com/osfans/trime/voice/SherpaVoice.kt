@@ -42,8 +42,10 @@ import java.net.URL
 object SherpaVoice {
     private const val SAMPLE_RATE = 16000
     private const val STATUS_LOADING = "⏳ 正在加载语音模型…"
-    private const val STATUS_LISTENING = "🎙 请说话…"
-    private const val STATUS_RECOGNIZING = "⌛ 正在识别…"
+    private const val STATUS_LISTENING = "🎙 请开始说话…"
+    private const val STATUS_WAITING = "🎙 暂未识别到文字，请继续说话…"
+    private const val STATUS_RECOGNIZING = "⌛ 正在整理识别结果…"
+    private const val NO_RESULT_REMINDER_MS = 8_000L
     private const val MAX_SECONDS = 300
     private const val IDLE_RELEASE_MS = 60_000L
     private const val MODEL_DIR_NAME = "sherpa-paraformer-zh-en"
@@ -199,6 +201,7 @@ object SherpaVoice {
     ) {
         val context = service.applicationContext
         showComposing(service, STATUS_LOADING)
+        toast(context, "正在加载语音模型，请稍候…")
         val rec = getRecognizer(dir)
         val stream = rec.createStream()
         val minBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
@@ -219,6 +222,9 @@ object SherpaVoice {
         }
         val buffer = ShortArray(SAMPLE_RATE / 10)
         var lastShown = ""
+        var committedAny = false
+        var lastRecognitionAt = SystemClock.elapsedRealtime()
+        var silenceReminderShown = false
         val startMs = SystemClock.elapsedRealtime()
         try {
             record.startRecording()
@@ -235,13 +241,31 @@ object SherpaVoice {
                 }
                 val text = rec.getResult(stream).text
                 if (rec.isEndpoint(stream)) {
-                    if (text.isNotBlank()) commit(service, text)
+                    if (text.isNotBlank()) {
+                        commit(service, text)
+                        committedAny = true
+                    }
                     lastShown = ""
+                    lastRecognitionAt = SystemClock.elapsedRealtime()
+                    silenceReminderShown = false
                     rec.reset(stream)
                     showComposing(service, STATUS_LISTENING)
                 } else if (text != lastShown) {
                     lastShown = text
-                    showComposing(service, text)
+                    if (text.isNotBlank()) {
+                        lastRecognitionAt = SystemClock.elapsedRealtime()
+                        silenceReminderShown = false
+                        showComposing(service, text)
+                    } else {
+                        showComposing(service, STATUS_LISTENING)
+                    }
+                }
+                if (lastShown.isBlank() && !silenceReminderShown &&
+                    SystemClock.elapsedRealtime() - lastRecognitionAt >= NO_RESULT_REMINDER_MS
+                ) {
+                    silenceReminderShown = true
+                    showComposing(service, STATUS_WAITING)
+                    toast(context, "暂未识别到文字，请靠近麦克风并清晰说话")
                 }
             }
         } finally {
@@ -249,6 +273,10 @@ object SherpaVoice {
             record.release()
         }
         showComposing(service, STATUS_RECOGNIZING)
+        toast(context, STATUS_RECOGNIZING)
+        if (!stopRequested && SystemClock.elapsedRealtime() - startMs >= MAX_SECONDS * 1000L) {
+            toast(context, "语音输入已达到 5 分钟时长上限，正在结束…")
+        }
         // Flush the remaining audio.
         stream.acceptWaveform(FloatArray(SAMPLE_RATE / 2), SAMPLE_RATE)
         stream.inputFinished()
@@ -258,11 +286,15 @@ object SherpaVoice {
         val finalText = rec.getResult(stream).text
         if (finalText.isNotBlank()) {
             commit(service, finalText)
-        } else {
-            showComposing(service, "")
+            committedAny = true
         }
+        showComposing(service, "")
         stream.release()
-        toast(context, "✓ 语音输入已结束")
+        if (committedAny) {
+            toast(context, "✓ 语音输入完成")
+        } else {
+            toast(context, "未识别到语音内容，请重试")
+        }
     }
 
     /** The model may be packaged inside the APK (assets/MODEL_DIR_NAME). */
