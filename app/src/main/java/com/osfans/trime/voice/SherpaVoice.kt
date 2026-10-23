@@ -20,6 +20,11 @@ import androidx.core.content.ContextCompat
 import com.k2fsa.sherpa.onnx.FeatureConfig
 import com.k2fsa.sherpa.onnx.OnlineModelConfig
 import com.k2fsa.sherpa.onnx.OnlineParaformerModelConfig
+import com.k2fsa.sherpa.onnx.EndpointConfig
+import com.k2fsa.sherpa.onnx.EndpointRule
+import com.k2fsa.sherpa.onnx.OfflinePunctuation
+import com.k2fsa.sherpa.onnx.OfflinePunctuationConfig
+import com.k2fsa.sherpa.onnx.OfflinePunctuationModelConfig
 import com.k2fsa.sherpa.onnx.OnlineRecognizer
 import com.k2fsa.sherpa.onnx.OnlineRecognizerConfig
 import com.osfans.trime.ime.core.TrimeInputMethodService
@@ -49,7 +54,8 @@ object SherpaVoice {
     private const val AUTO_STOP_AFTER_SPEECH_SILENCE_MS = 2_500L
     private const val AUTO_STOP_NO_SPEECH_MS = 12_000L
     private const val MAX_SECONDS = 300
-    private const val IDLE_RELEASE_MS = 60_000L
+    private const val IDLE_RELEASE_MS = 10 * 60_000L
+    private const val PUNCT = "punct.int8.onnx"
     private const val MODEL_DIR_NAME = "sherpa-paraformer-zh-en"
     private const val ENCODER = "encoder.int8.onnx"
     private const val DECODER = "decoder.int8.onnx"
@@ -97,6 +103,55 @@ object SherpaVoice {
 
     @Volatile
     private var recognizer: OnlineRecognizer? = null
+    private var punctuation: OfflinePunctuation? = null
+
+    /** Add punctuation to a finished utterance; falls back to the raw text if the model is missing. */
+    private fun punctuate(
+        dir: File,
+        text: String,
+    ): String {
+        if (text.isBlank()) return text
+        return runCatching {
+            val p =
+                synchronized(this) {
+                    punctuation ?: File(dir, PUNCT)
+                        .takeIf { it.exists() && it.length() > 0 }
+                        ?.let {
+                            OfflinePunctuation(
+                                config =
+                                    OfflinePunctuationConfig(
+                                        model =
+                                            OfflinePunctuationModelConfig(
+                                                ctTransformer = it.absolutePath,
+                                                numThreads = 2,
+                                            ),
+                                    ),
+                            )
+                        }?.also { punctuation = it }
+                }
+            p?.addPunctuation(text)?.trim()?.ifBlank { null } ?: text
+        }.getOrElse {
+            Timber.e(it, "punctuation failed")
+            text
+        }
+    }
+
+    private fun ensurePunctuationInstalled(
+        context: Context,
+        dir: File,
+    ) {
+        val target = File(dir, PUNCT)
+        if (target.exists() && target.length() > 0) return
+        runCatching {
+            dir.mkdirs()
+            val tmp = File(dir, "$PUNCT.part")
+            context.assets.open("$MODEL_DIR_NAME/$PUNCT").use { input ->
+                tmp.outputStream().use { output -> input.copyTo(output, 1 shl 20) }
+            }
+            target.delete()
+            tmp.renameTo(target)
+        }
+    }
 
     @Volatile
     private var listenJob: Job? = null
@@ -119,6 +174,8 @@ object SherpaVoice {
                 synchronized(this) {
                     recognizer?.release()
                     recognizer = null
+                    punctuation?.release()
+                    punctuation = null
                 }
             }
         }
@@ -198,6 +255,7 @@ object SherpaVoice {
                             toast(context, "首次使用，正在解压语音模型…")
                             installBundledModel(context, dir)
                         }
+                        ensurePunctuationInstalled(context, dir)
                         runSession(service, dir)
                     }.onFailure {
                         Timber.e(it, "voice session failed")
@@ -232,10 +290,16 @@ object SherpaVoice {
                             decoder = File(dir, DECODER).absolutePath,
                         ),
                         tokens = File(dir, TOKENS).absolutePath,
-                        numThreads = 2,
+                        numThreads = 4,
                         provider = "cpu",
                         modelType = "paraformer",
                     ),
+                    endpointConfig =
+                        EndpointConfig(
+                            rule1 = EndpointRule(false, 1.8f, 0.0f),
+                            rule2 = EndpointRule(true, 0.7f, 0.0f),
+                            rule3 = EndpointRule(false, 0.0f, 20.0f),
+                        ),
                     enableEndpoint = true,
                     decodingMethod = "greedy_search",
                 )
@@ -378,9 +442,10 @@ object SherpaVoice {
                 val text = rec.getResult(stream).text.trim()
                 if (rec.isEndpoint(stream)) {
                     if (text.isNotBlank()) {
-                        val toCommit = withOptionalSpace(lastCommitted, text)
+                        val punctuated = punctuate(dir, text)
+                        val toCommit = withOptionalSpace(lastCommitted, punctuated)
                         commit(service, toCommit)
-                        lastCommitted = text
+                        lastCommitted = punctuated
                         committedAny = true
                         heardSpeech = true
                         lastActivityAt = SystemClock.elapsedRealtime()
@@ -427,7 +492,7 @@ object SherpaVoice {
             }
             val finalText = rec.getResult(stream).text.trim().ifBlank { lastShown.trim() }
             if (finalText.isNotBlank()) {
-                val toCommit = withOptionalSpace(lastCommitted, finalText)
+                val toCommit = withOptionalSpace(lastCommitted, punctuate(dir, finalText))
                 // Avoid re-committing the exact same endpoint text when auto-stop races endpoint.
                 if (toCommit.trim() != lastCommitted.trim()) {
                     commit(service, toCommit)

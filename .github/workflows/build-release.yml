@@ -59,6 +59,17 @@ jobs:
           done
           ls -la $D
 
+      - name: Download punctuation model into assets (bundled in APK)
+        run: |
+          D=app/src/main/assets/sherpa-paraformer-zh-en
+          curl -fL --retry 3 -o /tmp/punct.tar.bz2 https://github.com/k2-fsa/sherpa-onnx/releases/download/punctuation-models/sherpa-onnx-punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8.tar.bz2
+          mkdir -p /tmp/punct
+          tar xjf /tmp/punct.tar.bz2 -C /tmp/punct
+          P=$(find /tmp/punct -name "model*.onnx" | head -1)
+          test -s "$P"
+          cp "$P" "$D/punct.int8.onnx"
+          ls -la $D
+
       - name: Install Android NDK
         run: |
           sdkmanager --install "cmake;3.31.6"

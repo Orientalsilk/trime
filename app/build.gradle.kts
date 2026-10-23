@@ -52,6 +52,16 @@ android {
         resValues = true
     }
 
+    signingConfigs {
+        // Fixed debug key so every CI-built debug APK can be installed over the previous one.
+        create("trimeDebug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -74,6 +84,7 @@ android {
         }
         debug {
             applicationIdSuffix = ".debug"
+            signingConfig = signingConfigs.getByName("trimeDebug")
 
             resValue("string", "trime_app_name", "@string/app_name_debug")
         }

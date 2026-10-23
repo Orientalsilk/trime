@@ -340,9 +340,10 @@ class KeyView(
                 color = accent
                 alpha = 240
             }
-            val count = 23
-            val barW = dp(3f)
-            val gap = dp(3f)
+            val barW = dp(1.6f)
+            val gap = dp(2.4f)
+            val usable = w * 0.62f
+            val count = ((usable + gap) / (barW + gap)).toInt().coerceAtLeast(9) or 1
             val total = count * barW + (count - 1) * gap
             val startX = (w - total) / 2f
             val mid = (count - 1) / 2f
@@ -355,7 +356,7 @@ class KeyView(
                         kotlin.math.sin(t * 2f * Math.PI * 2f + i * 0.7f),
                     ).toFloat()
                 val amp = (0.1f + 0.9f * level) * envelope * wobble
-                val barH = maxOf(dp(3f), amp * h * 0.64f)
+                val barH = maxOf(dp(2.5f), amp * h * 0.56f)
                 val left = startX + i * (barW + gap)
                 val top = (h - barH) / 2f
                 canvas.drawRoundRect(left, top, left + barW, top + barH, barW / 2f, barW / 2f, voiceIndicatorPaint)
