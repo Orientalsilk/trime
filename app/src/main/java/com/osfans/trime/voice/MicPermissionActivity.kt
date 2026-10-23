@@ -42,10 +42,13 @@ class MicPermissionActivity : Activity() {
             val message =
                 when {
                     granted -> "麦克风权限已开启，请返回键盘再点一次语音键"
+
                     shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO) ->
                         "语音输入需要麦克风权限；请再次点击语音键并允许使用麦克风"
+
                     permissionRequestedBefore ->
                         "麦克风权限未开启。请到系统设置中找到同文输入法，允许麦克风权限后重试"
+
                     else ->
                         "未获得麦克风权限，语音输入暂不可用；再次点击语音键可重新申请"
                 }
