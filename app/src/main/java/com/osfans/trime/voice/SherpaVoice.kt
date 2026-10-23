@@ -163,11 +163,9 @@ object SherpaVoice {
         }
     }
 
-    private fun modelDir(context: Context): File =
-        File(context.getExternalFilesDir(null) ?: context.filesDir, MODEL_DIR_NAME)
+    private fun modelDir(context: Context): File = File(context.getExternalFilesDir(null) ?: context.filesDir, MODEL_DIR_NAME)
 
-    private fun modelReady(dir: File): Boolean =
-        MODEL_FILES.all { File(dir, it).let { file -> file.exists() && file.length() > 0 } }
+    private fun modelReady(dir: File): Boolean = MODEL_FILES.all { File(dir, it).let { file -> file.exists() && file.length() > 0 } }
 
     private fun start(service: TrimeInputMethodService) {
         val context = service.applicationContext
@@ -228,30 +226,29 @@ object SherpaVoice {
         notifyStateChanged()
     }
 
-    private fun getRecognizer(dir: File): OnlineRecognizer =
-        synchronized(this) {
-            recognizer ?: run {
-                val config =
-                    OnlineRecognizerConfig(
-                        featConfig = FeatureConfig(sampleRate = SAMPLE_RATE, featureDim = 80),
-                        modelConfig =
-                            OnlineModelConfig(
-                                paraformer =
-                                    OnlineParaformerModelConfig(
-                                        encoder = File(dir, ENCODER).absolutePath,
-                                        decoder = File(dir, DECODER).absolutePath,
-                                    ),
-                                tokens = File(dir, TOKENS).absolutePath,
-                                numThreads = 2,
-                                provider = "cpu",
-                                modelType = "paraformer",
-                            ),
-                        enableEndpoint = true,
-                        decodingMethod = "greedy_search",
-                    )
-                OnlineRecognizer(config = config).also { recognizer = it }
-            }
+    private fun getRecognizer(dir: File): OnlineRecognizer = synchronized(this) {
+        recognizer ?: run {
+            val config =
+                OnlineRecognizerConfig(
+                    featConfig = FeatureConfig(sampleRate = SAMPLE_RATE, featureDim = 80),
+                    modelConfig =
+                    OnlineModelConfig(
+                        paraformer =
+                        OnlineParaformerModelConfig(
+                            encoder = File(dir, ENCODER).absolutePath,
+                            decoder = File(dir, DECODER).absolutePath,
+                        ),
+                        tokens = File(dir, TOKENS).absolutePath,
+                        numThreads = 2,
+                        provider = "cpu",
+                        modelType = "paraformer",
+                    ),
+                    enableEndpoint = true,
+                    decodingMethod = "greedy_search",
+                )
+            OnlineRecognizer(config = config).also { recognizer = it }
         }
+    }
 
     private fun commit(
         service: TrimeInputMethodService,
@@ -462,10 +459,9 @@ object SherpaVoice {
     }
 
     /** The model may be packaged inside the APK (assets/MODEL_DIR_NAME). */
-    private fun hasBundledModel(context: Context): Boolean =
-        runCatching {
-            context.assets.list(MODEL_DIR_NAME)?.toSet()?.containsAll(MODEL_FILES) == true
-        }.getOrDefault(false)
+    private fun hasBundledModel(context: Context): Boolean = runCatching {
+        context.assets.list(MODEL_DIR_NAME)?.toSet()?.containsAll(MODEL_FILES) == true
+    }.getOrDefault(false)
 
     private fun installBundledModel(
         context: Context,
