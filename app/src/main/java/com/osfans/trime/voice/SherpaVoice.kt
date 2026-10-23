@@ -380,8 +380,10 @@ object SherpaVoice {
         var lastError: Throwable? = null
         for (base in MODEL_BASE_URLS) {
             val part = File(target.parentFile, "$name.part")
+            var connection: HttpURLConnection? = null
             try {
                 val conn = URL(base + name).openConnection() as HttpURLConnection
+                connection = conn
                 conn.connectTimeout = 15_000
                 conn.readTimeout = 30_000
                 conn.instanceFollowRedirects = true
@@ -416,6 +418,8 @@ object SherpaVoice {
                 lastError = e
                 part.delete()
                 Timber.w(e, "download $name from $base failed")
+            } finally {
+                connection?.disconnect()
             }
         }
         throw lastError ?: IllegalStateException("download failed")
