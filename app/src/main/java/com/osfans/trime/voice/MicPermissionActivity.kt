@@ -23,6 +23,7 @@ class MicPermissionActivity : Activity() {
             finish()
             return
         }
+        getPreferences(MODE_PRIVATE).edit().putBoolean(KEY_PERMISSION_REQUESTED, true).apply()
         requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO)
     }
 
@@ -35,10 +36,14 @@ class MicPermissionActivity : Activity() {
         if (requestCode == REQUEST_RECORD_AUDIO) {
             val granted = grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
             val message =
-                if (granted) {
-                    "麦克风权限已开启，请返回键盘再点一次语音键"
-                } else {
-                    "未获得麦克风权限，无法使用语音输入；可在系统设置中允许麦克风权限"
+                when {
+                    granted -> "麦克风权限已开启，请返回键盘再点一次语音键"
+                    shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO) ->
+                        "语音输入需要麦克风权限；请再次点击语音键并允许使用麦克风"
+                    getPreferences(MODE_PRIVATE).getBoolean(KEY_PERMISSION_REQUESTED, false) ->
+                        "麦克风权限未开启。请到系统设置中找到同文输入法，允许麦克风权限后重试"
+                    else ->
+                        "未获得麦克风权限，语音输入暂不可用；再次点击语音键可重新申请"
                 }
             Toast.makeText(this, message, Toast.LENGTH_LONG).show()
         }
@@ -47,5 +52,6 @@ class MicPermissionActivity : Activity() {
 
     private companion object {
         const val REQUEST_RECORD_AUDIO = 1
+        const val KEY_PERMISSION_REQUESTED = "microphone_permission_requested"
     }
 }
