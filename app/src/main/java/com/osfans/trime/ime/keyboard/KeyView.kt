@@ -55,6 +55,7 @@ class KeyView(
     }
 
     private val voiceIndicatorPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val voiceStateListener: () -> Unit = { postInvalidate() }
     private val isVoiceKey: Boolean
         get() = key.getAction(KeyBehavior.CLICK)?.code == KeyEvent.KEYCODE_VOICE_ASSIST
 
@@ -276,6 +277,16 @@ class KeyView(
         popup.listener.onPopupAction(
             PopupAction.DismissAction(id),
         )
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        if (isVoiceKey) SherpaVoice.addStateListener(voiceStateListener)
+    }
+
+    override fun onDetachedFromWindow() {
+        if (isVoiceKey) SherpaVoice.removeStateListener(voiceStateListener)
+        super.onDetachedFromWindow()
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
