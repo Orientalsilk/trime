@@ -56,12 +56,6 @@ internal object LegacyThemeCompatibility {
         // configuration sections. Any aliases have already been resolved.
         if (root["colors"]?.mapping != null) root.remove("colors")
 
-        fun moveStyleAlias(legacy: String, modern: String) {
-            val value = style.remove(legacy) ?: return
-            if (modern !in style) style[modern] = value
-            rewriteStyle = true
-        }
-
         // Settings with a clear one-to-one mapping to the current renderer.
         // long_text_font is a supported legacy field on GeneralStyle, so it is
         // deliberately retained rather than being confused with popup_font.
