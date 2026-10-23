@@ -52,6 +52,10 @@ class ThemeFonts(private val theme: Theme) {
     val key: Typeface
         get() = getTypeface(style.keyFont.toList())
 
+    /** Use legacy long_text_font for multi-character key labels when configured. */
+    val longText: Typeface
+        get() = style.longTextFont.toList().takeIf { it.isNotEmpty() }?.let(::getTypeface) ?: key
+
     val label: Typeface
         get() = getTypeface(style.labelFont.toList())
 
