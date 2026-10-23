@@ -300,6 +300,8 @@ object SherpaVoice {
         return if (needSpace) " $next" else next
     }
 
+    // RECORD_AUDIO is checked in start() before the session begins.
+    @android.annotation.SuppressLint("MissingPermission")
     private suspend fun runSession(
         service: TrimeInputMethodService,
         dir: File,
