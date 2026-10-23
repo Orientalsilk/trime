@@ -55,17 +55,41 @@ internal object LiquidKeyboardSerializer : KSerializer<LiquidKeyboard> {
         }.getOrElse { Header() }
         val keyboards = header.keyboards.mapNotNull decode@{ id ->
             val node = root.pairs[id] as? YamlMap ?: return@decode null
-            runCatching {
-                val body = ThemeYaml.parser.decodeFromYamlNode(bodySerializer, node)
-                LiquidKeyboard.Keyboard(
-                    id = id,
-                    type = body.type,
-                    name = body.name ?: id,
-                    keys = body.keys.toKeyItems(body.type),
-                )
+            val body = runCatching {
+                ThemeYaml.parser.decodeFromYamlNode(bodySerializer, node)
             }.onFailure {
-                Timber.w(it, "Failed to decode LiquidKeyboard property 'keyboards'")
-            }.getOrNull()
+                Timber.w(it, "Failed to decode LiquidKeyboard '%s'", id)
+            }.getOrNull() ?: return@decode null
+            val rawType = body.type?.trim()
+            val type = rawType?.let { raw ->
+                LiquidKeyboard.DataType.entries.firstOrNull { it.name.equals(raw, ignoreCase = true) }
+            }
+            if (type == null) {
+                when (rawType?.uppercase()) {
+                    "DRAFT" ->
+                        Timber.w(
+                            "Skipping legacy liquid keyboard '%s': the DRAFT feature was removed for stability and privacy",
+                            id,
+                        )
+                    "CLIPBOARD", "COLLECTION" ->
+                        Timber.i(
+                            "Skipping legacy liquid keyboard '%s': %s is now managed by the standalone clipboard window; use the 'clipboard_window' action",
+                            id,
+                            rawType.orEmpty().uppercase(),
+                        )
+                    null, "" ->
+                        Timber.w("Skipping liquid keyboard '%s': its type is missing", id)
+                    else ->
+                        Timber.w("Skipping liquid keyboard '%s': unsupported type '%s'", id, rawType)
+                }
+                return@decode null
+            }
+            LiquidKeyboard.Keyboard(
+                id = id,
+                type = type,
+                name = body.name ?: id,
+                keys = body.keys.toKeyItems(type),
+            )
         }
         return LiquidKeyboard(
             singleWidth = header.singleWidth,
@@ -91,7 +115,9 @@ internal object LiquidKeyboardSerializer : KSerializer<LiquidKeyboard> {
     /** One keyboard section; its id is the key it is stored under. */
     @Serializable
     private data class Body(
-        val type: LiquidKeyboard.DataType,
+        // Read as text first so obsolete type names don't abort decoding of
+        // this keyboard (or generate an exception stack for a known migration).
+        val type: String? = null,
         val name: String? = null,
         val keys: Keys = Keys(),
     )
