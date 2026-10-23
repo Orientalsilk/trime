@@ -356,15 +356,6 @@ class KeyView(
         val h = height.toFloat()
         val accent = Color.rgb(43, 112, 238)
 
-        voiceIndicatorPaint.apply {
-            color = accent
-            style = Paint.Style.STROKE
-            strokeWidth = dp(1.5f)
-            alpha = (135 + pulse * 120).toInt()
-        }
-        val inset = dp(2f)
-        canvas.drawRoundRect(inset, inset, w - inset, h - inset, dp(8f), dp(8f), voiceIndicatorPaint)
-
         if (state == SherpaVoice.Phase.LISTENING) {
             voiceIndicatorPaint.apply {
                 style = Paint.Style.FILL

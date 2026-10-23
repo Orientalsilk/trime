@@ -260,8 +260,8 @@ object SherpaVoice {
         if (text.isBlank()) return
         mainHandler.post {
             val ic = service.currentInputConnection ?: return@post
-            // Finish any composing region first so partial text is not left behind.
-            runCatching { ic.finishComposingText() }
+            // commitText replaces the composing preview; finishing it first would keep the preview
+            // and then insert the text a second time.
             ic.commitText(text, 1)
         }
     }
