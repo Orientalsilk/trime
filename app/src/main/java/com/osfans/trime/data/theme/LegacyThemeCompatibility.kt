@@ -64,12 +64,11 @@ internal object LegacyThemeCompatibility {
 
         // Settings with a clear one-to-one mapping to the current renderer.
         moveStyleAlias("long_text_font", "popup_font")
-        moveStyleAlias("margin_x", "keyboard_padding_left")
-        val marginX = style["keyboard_padding_left"]
-        if (marginX != null && "keyboard_padding_right" !in style) {
-            // Use the legacy horizontal margin for both sides only when the
-            // modern right-side value wasn't explicitly supplied.
-            style["keyboard_padding_right"] = marginX
+        val marginX = style.remove("margin_x")
+        if (marginX != null) {
+            if ("keyboard_padding_left" !in style) style["keyboard_padding_left"] = marginX
+            if ("keyboard_padding_right" !in style) style["keyboard_padding_right"] = marginX
+            rewriteStyle = true
         }
         val marginY = style.remove("margin_y")
         if (marginY != null) {
@@ -82,7 +81,7 @@ internal object LegacyThemeCompatibility {
 
         // The pre-2025 liquid keyboard used a toolbar action with this name;
         // clipboard is now a separate window and has a dedicated action.
-        root["tool_bar"] = root["tool_bar"]?.let(::normalizeToolbarActions) ?: return yamlMapOf(root)
+        root["tool_bar"]?.let { root["tool_bar"] = normalizeToolbarActions(it) }
         return yamlMapOf(root)
     }
 
