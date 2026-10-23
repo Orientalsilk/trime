@@ -79,7 +79,14 @@ jobs:
 
       - name: Build release Trime
         run: |
-          make release
+          set +e
+          make release 2>&1 | tee /tmp/build.log
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then
+            msg=$(grep -E "^e: |error:|What went wrong|Caused by|Execution failed|FAILURE|Could not|duplicate|More than one" /tmp/build.log | head -25 | cut -c1-300 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=BUILD-ERROR::$msg"
+          fi
+          exit $rc
 
       - name: Add JNI cache
         if: ${{ !steps.jni-cache.outputs.cache-hit }}
