@@ -14,6 +14,8 @@ import androidx.core.content.ContextCompat
 
 /** A transparent activity used only to ask for the microphone permission (an IME cannot do it itself). */
 class MicPermissionActivity : Activity() {
+    private var permissionRequestedBefore = false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (
@@ -23,6 +25,8 @@ class MicPermissionActivity : Activity() {
             finish()
             return
         }
+        permissionRequestedBefore =
+            getPreferences(MODE_PRIVATE).getBoolean(KEY_PERMISSION_REQUESTED, false)
         getPreferences(MODE_PRIVATE).edit().putBoolean(KEY_PERMISSION_REQUESTED, true).apply()
         requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO)
     }
@@ -40,7 +44,7 @@ class MicPermissionActivity : Activity() {
                     granted -> "麦克风权限已开启，请返回键盘再点一次语音键"
                     shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO) ->
                         "语音输入需要麦克风权限；请再次点击语音键并允许使用麦克风"
-                    getPreferences(MODE_PRIVATE).getBoolean(KEY_PERMISSION_REQUESTED, false) ->
+                    permissionRequestedBefore ->
                         "麦克风权限未开启。请到系统设置中找到同文输入法，允许麦克风权限后重试"
                     else ->
                         "未获得麦克风权限，语音输入暂不可用；再次点击语音键可重新申请"
