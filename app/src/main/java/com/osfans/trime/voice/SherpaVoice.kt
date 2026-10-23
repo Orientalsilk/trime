@@ -126,10 +126,14 @@ object SherpaVoice {
 
     private fun start(service: TrimeInputMethodService) {
         val context = service.applicationContext
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+        if (
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
             toast(context, "需要麦克风权限，请在弹出的窗口里允许")
             context.startActivity(
-                Intent(context, MicPermissionActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                Intent(context, MicPermissionActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             )
             return
         }
@@ -323,7 +327,9 @@ object SherpaVoice {
 
     /** The model may be packaged inside the APK (assets/MODEL_DIR_NAME). */
     private fun hasBundledModel(context: Context): Boolean =
-        runCatching { context.assets.list(MODEL_DIR_NAME)?.toSet()?.containsAll(MODEL_FILES) == true }
+        runCatching {
+            context.assets.list(MODEL_DIR_NAME)?.toSet()?.containsAll(MODEL_FILES) == true
+        }
             .getOrDefault(false)
 
     private fun installBundledModel(
