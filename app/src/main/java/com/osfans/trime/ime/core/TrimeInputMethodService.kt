@@ -332,6 +332,7 @@ open class TrimeInputMethodService : LifecycleInputMethodService() {
     }
 
     override fun onDestroy() {
+        com.osfans.trime.voice.SherpaVoice.stop()
         InputFeedbackManager.destroy()
         inputView = null
         recreateInputViewPrefs.forEach {
