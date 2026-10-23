@@ -413,6 +413,7 @@ object SherpaVoice {
                     }
                 }
                 if (part.length() == 0L) error("empty file")
+                if (total > 0 && done != total) error("incomplete download: $done/$total bytes")
                 if (!part.renameTo(target)) error("cannot save $name")
                 return
             } catch (e: Throwable) {
