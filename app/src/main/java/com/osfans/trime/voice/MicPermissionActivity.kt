@@ -10,12 +10,16 @@ import android.app.Activity
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 
 /** A transparent activity used only to ask for the microphone permission (an IME cannot do it itself). */
 class MicPermissionActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+        if (
+            ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
             finish()
             return
         }
