@@ -303,7 +303,7 @@ object SherpaVoice {
             while (rec.isReady(stream)) {
                 rec.decode(stream)
             }
-            val finalText = rec.getResult(stream).text
+            val finalText = rec.getResult(stream).text.ifBlank { lastShown }
             if (finalText.isNotBlank()) {
                 commit(service, finalText)
                 committedAny = true
