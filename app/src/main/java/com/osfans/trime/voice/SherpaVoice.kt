@@ -234,7 +234,7 @@ object SherpaVoice {
 
             audioRecord.startRecording()
             recordingStarted = true
-            toast(context, "🎙 正在听，再点一次语音键结束")
+            toast(context, STATUS_LISTENING)
             while (
                 scope.isActive &&
                 !stopRequested &&
