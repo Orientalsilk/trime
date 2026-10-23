@@ -401,7 +401,12 @@ class KeyView(
             textPaint.apply {
                 color = textColor
                 this.textSize = textSize
-                typeface = if (label.length > 1 && !label.isIconFont) theme.fonts.longText else theme.fonts.key
+                typeface =
+                    if (label.length > 1 && !label.isIconFont) {
+                        theme.fonts.longText
+                    } else {
+                        theme.fonts.key
+                    }
                 clearShadowLayer()
             }
 
