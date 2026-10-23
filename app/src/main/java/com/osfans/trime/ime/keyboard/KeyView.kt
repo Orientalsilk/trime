@@ -8,6 +8,7 @@ package com.osfans.trime.ime.keyboard
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
@@ -51,6 +52,10 @@ class KeyView(
     private val symbolPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
     }
+
+    private val voiceIndicatorPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val isVoiceKey: Boolean
+        get() = key.getAction(KeyBehavior.CLICK)?.code == KeyEvent.KEYCODE_VOICE_ASSIST
 
     private var cachedIcon: IconicsDrawable? = null
     private var cachedIconName: String? = null
@@ -310,6 +315,69 @@ class KeyView(
         if (hint.isNotEmpty()) {
             drawSymbol(canvas, hint, isTop = false)
         }
+
+        drawVoiceListeningIndicator(canvas)
+    }
+
+    /**
+     * Show listening state directly on the voice key instead of covering keyboard
+     * keys with a floating panel. The animated outline and waveform do not replace
+     * the key label, so the user can still identify the control used to stop listening.
+     */
+    private fun drawVoiceListeningIndicator(canvas: Canvas) {
+        if (!isVoiceKey || !SherpaVoice.isListening) return
+
+        val now = android.os.SystemClock.uptimeMillis()
+        val phase = (now % 1_200L) / 1_200f
+        val pulse = (0.5f + 0.5f * kotlin.math.sin(phase * 2f * Math.PI)).toFloat()
+        val inset = dp(2f)
+        val radius = dp(8f)
+
+        voiceIndicatorPaint.apply {
+            color = Color.rgb(43, 112, 238)
+            style = Paint.Style.STROKE
+            strokeWidth = dp(1.5f)
+            alpha = (135 + pulse * 120).toInt()
+        }
+        canvas.drawRoundRect(
+            inset,
+            inset,
+            width - inset,
+            height - inset,
+            radius,
+            radius,
+            voiceIndicatorPaint,
+        )
+
+        // Five animated bars along the top edge form a compact sound-wave cue.
+        voiceIndicatorPaint.apply {
+            style = Paint.Style.FILL
+            alpha = 235
+        }
+        val centerX = width / 2f
+        val centerY = paddingTop + dp(4f)
+        val barWidth = dp(2f)
+        val barGap = dp(2f)
+        val heights = floatArrayOf(3f, 6f, 9f, 6f, 3f)
+        val waveWidth = barWidth * heights.size + barGap * (heights.size - 1)
+        val startX = centerX - waveWidth / 2f
+        heights.forEachIndexed { index, baseHeight ->
+            val modulation = 0.65f + 0.35f * kotlin.math.abs(
+                kotlin.math.sin(phase * 2f * Math.PI + index * 0.8f),
+            ).toFloat()
+            val barHeight = dp(baseHeight * modulation)
+            val left = startX + index * (barWidth + barGap)
+            canvas.drawRoundRect(
+                left,
+                centerY,
+                left + barWidth,
+                centerY + barHeight,
+                barWidth / 2f,
+                barWidth / 2f,
+                voiceIndicatorPaint,
+            )
+        }
+        postInvalidateDelayed(80L)
     }
 
     private fun drawBackground(canvas: Canvas, k: Key) {
