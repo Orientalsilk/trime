@@ -88,7 +88,7 @@ internal object LegacyThemeCompatibility {
                 } else {
                     normalizeToolbarActions(value)
                 }
-            },
+            }.toMap(),
         )
 
         is YamlList -> yamlListOf(*node.items.map(::normalizeToolbarActions).toTypedArray())
