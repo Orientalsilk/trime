@@ -42,7 +42,8 @@ class LegacyThemeCompatibilityTest :
                 theme.style.keyboardPaddingRight shouldBe 5
                 theme.style.keyboardPaddingBottom shouldBe 6
                 theme.style.keyboardPaddingLandBottom shouldBe 6
-                normalized.pairs["style"]?.mapping?.pairs?.get("popup_font")?.string shouldBe "legacy.ttf"
+                normalized.pairs["style"]?.mapping?.pairs?.get("long_text_font")?.string shouldBe "legacy.ttf"
+                theme.style.longTextFont.toList() shouldBe listOf("legacy.ttf")
             }
 
             Then("the retired clipboard toolbar action is migrated") {
