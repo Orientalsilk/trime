@@ -185,7 +185,7 @@ class ColorTableTest :
                 Then("the candidate border safely falls back to border_color") {
                     table.unresolvedKeys shouldNotContain ColorKey.CANDIDATE_BORDER_COLOR
                     table[ColorKey.CANDIDATE_BORDER_COLOR] shouldBe
-                        ColorTable.Value.Color(0xff123456.toInt())
+                        ColorTable.Value.Color(0x123456)
                 }
             }
         }
