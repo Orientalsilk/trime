@@ -174,14 +174,18 @@ class ColorTableTest :
                 }
             }
         }
-        Given("candidate_border_color, which UI code requests but the built-in themes never define") {
-            When("a built-in theme is resolved") {
-                val theme = ThemeTestSupport.decodeBuiltinTheme("trime.yaml")
-                val colors = theme.presetColorSchemes.values.first()
-                val table = ColorTable.resolve(colors, theme.fallbackColors, parseHex)
-                Then("the key is reported unresolved and resolves to None") {
-                    table.unresolvedKeys shouldContain ColorKey.CANDIDATE_BORDER_COLOR
-                    table[ColorKey.CANDIDATE_BORDER_COLOR] shouldBe ColorTable.Value.None
+        Given("candidate_border_color, which older themes often leave undefined") {
+            When("a scheme provides the general border color") {
+                val table =
+                    ColorTable.resolve(
+                        scheme("border_color" to "#123456"),
+                        emptyMap(),
+                        parseHex,
+                    )
+                Then("the candidate border safely falls back to border_color") {
+                    table.unresolvedKeys shouldNotContain ColorKey.CANDIDATE_BORDER_COLOR
+                    table[ColorKey.CANDIDATE_BORDER_COLOR] shouldBe
+                        ColorTable.Value.Color(0x123456)
                 }
             }
         }
