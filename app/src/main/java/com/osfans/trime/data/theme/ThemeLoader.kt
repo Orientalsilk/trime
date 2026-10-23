@@ -165,7 +165,9 @@ object ThemeLoader {
         themeId: String,
         node: YamlNode,
         loadResource: (String) -> YamlNode?,
-    ): Theme = ThemeYaml.parser.decodeFromYamlNode(expandSource(themeId, node, loadResource))
+    ): Theme = ThemeYaml.parser.decodeFromYamlNode(
+        LegacyThemeCompatibility.normalize(expandSource(themeId, node, loadResource)),
+    )
 
     /** Applies the supported DSL subset to [node] and returns its root mapping. */
     private fun expandSource(
