@@ -263,10 +263,10 @@ object SherpaVoice {
                     if (text.isNotBlank()) {
                         commit(service, text)
                         committedAny = true
+                        lastRecognitionAt = SystemClock.elapsedRealtime()
+                        silenceReminderShown = false
                     }
                     lastShown = ""
-                    lastRecognitionAt = SystemClock.elapsedRealtime()
-                    silenceReminderShown = false
                     rec.reset(stream)
                     showComposing(service, "")
                 } else if (text != lastShown) {
