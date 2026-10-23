@@ -15,6 +15,12 @@ SPDX-License-Identifier: GPL-3.0-or-later
     <!-- 仅用于首次下载语音识别模型 -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <application
         android:name="com.osfans.trime.TrimeApplication"
         android:allowBackup="true"
