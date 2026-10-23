@@ -528,7 +528,7 @@ object SherpaVoice {
                 conn.instanceFollowRedirects = true
                 conn.connect()
                 if (conn.responseCode !in 200..299) error("HTTP ${conn.responseCode}")
-                val total = conn.contentLengthLong
+                val total = conn.contentLength.toLong()
                 var done = 0L
                 var lastPercent = -1
                 conn.inputStream.use { input ->

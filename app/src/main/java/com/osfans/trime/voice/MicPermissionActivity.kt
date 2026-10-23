@@ -28,7 +28,11 @@ class MicPermissionActivity : Activity() {
         permissionRequestedBefore =
             getPreferences(MODE_PRIVATE).getBoolean(KEY_PERMISSION_REQUESTED, false)
         getPreferences(MODE_PRIVATE).edit().putBoolean(KEY_PERMISSION_REQUESTED, true).apply()
-        requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQUEST_RECORD_AUDIO)
+        androidx.core.app.ActivityCompat.requestPermissions(
+            this,
+            arrayOf(Manifest.permission.RECORD_AUDIO),
+            REQUEST_RECORD_AUDIO,
+        )
     }
 
     override fun onRequestPermissionsResult(
@@ -43,7 +47,10 @@ class MicPermissionActivity : Activity() {
                 when {
                     granted -> "麦克风权限已开启，请返回键盘再点一次语音键"
 
-                    shouldShowRequestPermissionRationale(Manifest.permission.RECORD_AUDIO) ->
+                    androidx.core.app.ActivityCompat.shouldShowRequestPermissionRationale(
+                        this,
+                        Manifest.permission.RECORD_AUDIO,
+                    ) ->
                         "语音输入需要麦克风权限；请再次点击语音键并允许使用麦克风"
 
                     permissionRequestedBefore ->
