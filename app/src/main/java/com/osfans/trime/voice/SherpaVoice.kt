@@ -113,12 +113,16 @@ object SherpaVoice {
         context: Context,
         text: String,
     ) {
-        mainHandler.post { Toast.makeText(context.applicationContext, text, Toast.LENGTH_SHORT).show() }
+        mainHandler.post {
+            Toast.makeText(context.applicationContext, text, Toast.LENGTH_SHORT).show()
+        }
     }
 
-    private fun modelDir(context: Context): File = File(context.getExternalFilesDir(null) ?: context.filesDir, MODEL_DIR_NAME)
+    private fun modelDir(context: Context): File =
+        File(context.getExternalFilesDir(null) ?: context.filesDir, MODEL_DIR_NAME)
 
-    private fun modelReady(dir: File): Boolean = MODEL_FILES.all { File(dir, it).let { f -> f.exists() && f.length() > 0 } }
+    private fun modelReady(dir: File): Boolean =
+        MODEL_FILES.all { File(dir, it).let { file -> file.exists() && file.length() > 0 } }
 
     private fun start(service: TrimeInputMethodService) {
         val context = service.applicationContext
