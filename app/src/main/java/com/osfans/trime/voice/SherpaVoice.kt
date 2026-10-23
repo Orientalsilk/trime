@@ -319,9 +319,9 @@ object SherpaVoice {
                 if (recordingStarted) {
                     runCatching { it.stop() }
                 }
-                it.release()
+                runCatching { it.release() }
             }
-            stream.release()
+            runCatching { stream.release() }
         }
     }
 
