@@ -22,6 +22,7 @@ import com.osfans.trime.ime.core.TrimeInputMethodService
 import com.osfans.trime.ime.popup.PopupAction
 import com.osfans.trime.ime.popup.PopupDelegate
 import com.osfans.trime.util.sp
+import com.osfans.trime.voice.SherpaVoice
 import splitties.dimensions.dp
 import timber.log.Timber
 
