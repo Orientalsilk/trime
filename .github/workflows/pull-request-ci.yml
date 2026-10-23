@@ -64,8 +64,6 @@ jobs:
       - name: Check code style
         if: ${{ startsWith(matrix.os, 'ubuntu') }}
         run: |
-          ./gradlew spotlessApply
-          git diff -- app/src/main/java/com/osfans/trime/voice/
           make style-lint
 
       - name: Run unit tests
