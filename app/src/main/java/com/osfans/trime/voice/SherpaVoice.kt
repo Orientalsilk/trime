@@ -62,6 +62,9 @@ object SherpaVoice {
     private val mainHandler = Handler(Looper.getMainLooper())
 
     @Volatile
+    private var activeToast: Toast? = null
+
+    @Volatile
     private var recognizer: OnlineRecognizer? = null
 
     @Volatile
@@ -112,9 +115,11 @@ object SherpaVoice {
     private fun toast(
         context: Context,
         text: String,
+        duration: Int = Toast.LENGTH_SHORT,
     ) {
         mainHandler.post {
-            Toast.makeText(context.applicationContext, text, Toast.LENGTH_SHORT).show()
+            activeToast?.cancel()
+            activeToast = Toast.makeText(context.applicationContext, text, duration).also { it.show() }
         }
     }
 
@@ -128,7 +133,7 @@ object SherpaVoice {
             ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) !=
             PackageManager.PERMISSION_GRANTED
         ) {
-            toast(context, "需要麦克风权限，请在弹出的窗口里允许")
+            toast(context, "请允许麦克风权限；授权后回到键盘，再点一次语音键", Toast.LENGTH_LONG)
             context.startActivity(
                 Intent(context, MicPermissionActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
@@ -155,7 +160,12 @@ object SherpaVoice {
                     .onFailure {
                         Timber.e(it, "voice session failed")
                         showComposing(service, "")
-                        toast(context, "语音识别出错：${it.message}")
+                        val message = when (it) {
+                            is SecurityException -> "无法访问麦克风，请检查应用权限"
+                            is IllegalStateException -> "录音暂时不可用，请关闭其他正在使用麦克风的应用后重试"
+                            else -> "语音输入遇到问题，请重试；如果反复出现，请检查语音模型是否完整"
+                        }
+                        toast(context, message, Toast.LENGTH_LONG)
                     }
                 mainHandler.postDelayed(releaseIdle, IDLE_RELEASE_MS)
             }
@@ -246,7 +256,7 @@ object SherpaVoice {
                 SystemClock.elapsedRealtime() - startMs < MAX_SECONDS * 1000L
             ) {
                 val n = audioRecord.read(buffer, 0, buffer.size)
-                if (n < 0) break
+                if (n < 0) error("microphone read failed: $n")
                 if (n == 0) continue
 
                 val samples = FloatArray(n) { buffer[it] / 32768f }
@@ -353,7 +363,7 @@ object SherpaVoice {
             return
         }
         downloading = true
-        toast(context, "首次使用，正在下载语音模型（约 230MB），请保持网络畅通")
+        toast(context, "首次使用需要下载约 230MB 的语音模型，请保持网络畅通；下载完成后即可离线使用", Toast.LENGTH_LONG)
         scope.launch(Dispatchers.IO) {
             try {
                 dir.mkdirs()
@@ -362,10 +372,10 @@ object SherpaVoice {
                     if (target.exists() && target.length() > 0) continue
                     downloadFile(context, name, target)
                 }
-                toast(context, "语音模型下载完成，请再点一次语音键")
+                toast(context, "语音模型已准备好，回到键盘再点一次语音键即可开始", Toast.LENGTH_LONG)
             } catch (e: Throwable) {
                 Timber.e(e, "model download failed")
-                toast(context, "模型下载失败：${e.message}")
+                toast(context, "语音模型下载失败，请检查网络后重试", Toast.LENGTH_LONG)
             } finally {
                 downloading = false
             }
