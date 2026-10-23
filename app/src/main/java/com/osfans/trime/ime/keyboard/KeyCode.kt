@@ -30,6 +30,15 @@ object KeyCode {
         val androidCode = androidKeyNameToCode(name)
         if (androidCode > 0) return androidCode
 
+        // Older themes commonly use title-case Android key names (for
+        // example, "Help"), while KeyEvent.keyCodeFromString expects the
+        // canonical upper-case spelling ("KEYCODE_HELP").
+        val upperName = name.uppercase()
+        if (upperName != name) {
+            val upperAndroidCode = androidKeyNameToCode(upperName)
+            if (upperAndroidCode > 0) return upperAndroidCode
+        }
+
         val rimeCode = RimeKeyMapping.nameToKeyCode(name)
         if (rimeCode != KeyEvent.KEYCODE_UNKNOWN) return rimeCode
 
