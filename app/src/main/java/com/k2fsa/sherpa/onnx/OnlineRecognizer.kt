@@ -11,7 +11,7 @@ data class EndpointRule(
 data class EndpointConfig(
     var rule1: EndpointRule = EndpointRule(false, 2.4f, 0.0f),
     var rule2: EndpointRule = EndpointRule(true, 1.4f, 0.0f),
-    var rule3: EndpointRule = EndpointRule(false, 0.0f, 20.0f)
+    var rule3: EndpointRule = EndpointRule(false, 0.0f, 20.0f),
 )
 
 data class OnlineTransducerModelConfig(
@@ -123,9 +123,7 @@ class OnlineRecognizer(
     fun decode(stream: OnlineStream) = decode(ptr, stream.ptr)
     fun isEndpoint(stream: OnlineStream) = isEndpoint(ptr, stream.ptr)
     fun isReady(stream: OnlineStream) = isReady(ptr, stream.ptr)
-    fun getResult(stream: OnlineStream): OnlineRecognizerResult {
-        return getResult(ptr, stream.ptr)
-    }
+    fun getResult(stream: OnlineStream): OnlineRecognizerResult = getResult(ptr, stream.ptr)
 
     private external fun delete(ptr: Long)
 
@@ -154,7 +152,6 @@ class OnlineRecognizer(
         external fun prependAdspLibraryPath(newPath: String) // for qnn
     }
 }
-
 
 /*
 Please see
@@ -759,7 +756,6 @@ fun getModelConfig(type: Int): OnlineModelConfig? {
                 provider = "rknn",
             )
         }
-
     }
     return null
 }
@@ -790,10 +786,8 @@ fun getOnlineLMConfig(type: Int): OnlineLMConfig {
     return OnlineLMConfig()
 }
 
-fun getEndpointConfig(): EndpointConfig {
-    return EndpointConfig(
-        rule1 = EndpointRule(false, 2.4f, 0.0f),
-        rule2 = EndpointRule(true, 1.4f, 0.0f),
-        rule3 = EndpointRule(false, 0.0f, 20.0f)
-    )
-}
+fun getEndpointConfig(): EndpointConfig = EndpointConfig(
+    rule1 = EndpointRule(false, 2.4f, 0.0f),
+    rule2 = EndpointRule(true, 1.4f, 0.0f),
+    rule3 = EndpointRule(false, 0.0f, 20.0f),
+)

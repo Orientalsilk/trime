@@ -5,8 +5,7 @@ class OnlineStream(var ptr: Long = 0) {
         require(ptr != 0L) { "Failed to create native OnlineStream" }
     }
 
-    fun acceptWaveform(samples: FloatArray, sampleRate: Int) =
-        acceptWaveform(ptr, samples, sampleRate)
+    fun acceptWaveform(samples: FloatArray, sampleRate: Int) = acceptWaveform(ptr, samples, sampleRate)
 
     fun inputFinished() = inputFinished(ptr)
 
@@ -36,7 +35,6 @@ class OnlineStream(var ptr: Long = 0) {
     private external fun setOption(ptr: Long, key: String, value: String)
     private external fun getOption(ptr: Long, key: String): String
     private external fun delete(ptr: Long)
-
 
     companion object {
         init {
