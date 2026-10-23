@@ -63,7 +63,8 @@ internal object LegacyThemeCompatibility {
         }
 
         // Settings with a clear one-to-one mapping to the current renderer.
-        moveStyleAlias("long_text_font", "popup_font")
+        // long_text_font is a supported legacy field on GeneralStyle, so it is
+        // deliberately retained rather than being confused with popup_font.
         val marginX = style.remove("margin_x")
         if (marginX != null) {
             if ("keyboard_padding_left" !in style) style["keyboard_padding_left"] = marginX
