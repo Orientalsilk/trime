@@ -102,6 +102,7 @@ object SherpaVoice {
         if (!nativeOk) return false
         if (isListening) {
             stop()
+            toast(service.applicationContext, "正在结束语音输入…")
         } else {
             start(service)
         }
