@@ -71,14 +71,17 @@ internal object LiquidKeyboardSerializer : KSerializer<LiquidKeyboard> {
                             "Skipping legacy liquid keyboard '%s': the DRAFT feature was removed for stability and privacy",
                             id,
                         )
+
                     "CLIPBOARD", "COLLECTION" ->
                         Timber.i(
                             "Skipping legacy liquid keyboard '%s': %s is now managed by the standalone clipboard window; use the 'clipboard_window' action",
                             id,
                             rawType.orEmpty().uppercase(),
                         )
+
                     null, "" ->
                         Timber.w("Skipping liquid keyboard '%s': its type is missing", id)
+
                     else ->
                         Timber.w("Skipping liquid keyboard '%s': unsupported type '%s'", id, rawType)
                 }
