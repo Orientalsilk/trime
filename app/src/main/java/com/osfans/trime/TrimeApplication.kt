@@ -180,6 +180,7 @@ class TrimeApplication : Application() {
                 Timber.d("Last pid is $lastPid. Set it to current pid: $currentPid")
                 setValue(currentPid)
             }
+            logPreviousExitReasons(ctx)
             ClipboardHelper.init(ctx)
             CollectionHelper.init(ctx)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !isDirectBootMode) {
@@ -208,6 +209,52 @@ class TrimeApplication : Application() {
         coroutineScope.launch {
             BackgroundSyncWork.start(directBootAwareContext)
         }
+    }
+
+    /**
+     * Why did the previous process of this app die? Android 11+ remembers it (crash, native crash,
+     * low memory, killed...). Writing it to the log makes silent keyboard disappearances diagnosable.
+     */
+    private fun logPreviousExitReasons(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        runCatching {
+            val am = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            am.getHistoricalProcessExitReasons(context.packageName, 0, 4).forEach { info ->
+                val reason =
+                    when (info.reason) {
+                        android.app.ApplicationExitInfo.REASON_CRASH -> "CRASH(java)"
+                        android.app.ApplicationExitInfo.REASON_CRASH_NATIVE -> "CRASH_NATIVE"
+                        android.app.ApplicationExitInfo.REASON_LOW_MEMORY -> "LOW_MEMORY(killed)"
+                        android.app.ApplicationExitInfo.REASON_SIGNALED -> "SIGNALED"
+                        android.app.ApplicationExitInfo.REASON_ANR -> "ANR"
+                        android.app.ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "EXCESSIVE_RESOURCE"
+                        android.app.ApplicationExitInfo.REASON_USER_REQUESTED -> "USER_REQUESTED"
+                        android.app.ApplicationExitInfo.REASON_USER_STOPPED -> "USER_STOPPED"
+                        android.app.ApplicationExitInfo.REASON_DEPENDENCY_DIED -> "DEPENDENCY_DIED"
+                        android.app.ApplicationExitInfo.REASON_INITIALIZATION_FAILURE -> "INIT_FAILURE"
+                        else -> "OTHER(${info.reason})"
+                    }
+                Timber.w(
+                    "PREVIOUS-EXIT pid=%d reason=%s status=%d importance=%d pss=%dKB rss=%dKB desc=%s",
+                    info.pid,
+                    reason,
+                    info.status,
+                    info.importance,
+                    info.pss,
+                    info.rss,
+                    info.description,
+                )
+                if (info.reason == android.app.ApplicationExitInfo.REASON_CRASH_NATIVE ||
+                    info.reason == android.app.ApplicationExitInfo.REASON_ANR
+                ) {
+                    runCatching {
+                        info.traceInputStream?.bufferedReader()?.useLines { lines ->
+                            lines.take(40).forEach { Timber.w("PREVIOUS-EXIT trace: %s", it) }
+                        }
+                    }
+                }
+            }
+        }.onFailure { Timber.w(it, "could not read previous exit reasons") }
     }
 
     companion object {
