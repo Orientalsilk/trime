@@ -131,6 +131,15 @@ class TrimeApplication : Application() {
                 exitProcess(10)
             }
         }
+        // Keep the stack trace of the last Java crash, so the next log export can show it.
+        val crashFile = File(ctx.filesDir, "last_crash.txt")
+        val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, e ->
+            runCatching {
+                crashFile.writeText("thread=${thread.name}\n${e.stackTraceToString().take(12_000)}")
+            }
+            previousHandler?.uncaughtException(thread, e)
+        }
         instance = this
         try {
             if (BuildConfig.DEBUG) {
@@ -181,6 +190,13 @@ class TrimeApplication : Application() {
                 setValue(currentPid)
             }
             logPreviousExitReasons(ctx)
+            runCatching {
+                val crashFile = File(ctx.filesDir, "last_crash.txt")
+                if (crashFile.exists()) {
+                    crashFile.readLines().take(60).forEach { Timber.e("PREVIOUS-CRASH: %s", it) }
+                    crashFile.delete()
+                }
+            }
             ClipboardHelper.init(ctx)
             CollectionHelper.init(ctx)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && !isDirectBootMode) {
