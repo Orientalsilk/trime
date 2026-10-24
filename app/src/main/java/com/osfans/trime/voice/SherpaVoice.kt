@@ -109,7 +109,11 @@ object SherpaVoice {
     private val indicatorCount = java.util.concurrent.atomic.AtomicInteger(0)
 
     fun indicatorAttached(attached: Boolean) {
-        if (attached) indicatorCount.incrementAndGet() else indicatorCount.updateAndGet { maxOf(0, it - 1) }
+        if (attached) {
+            indicatorCount.incrementAndGet()
+        } else if (indicatorCount.decrementAndGet() < 0) {
+            indicatorCount.set(0)
+        }
     }
 
     private fun preview(held: String): String = if (held.isEmpty() && indicatorCount.get() == 0) "🎙 请说话…" else held

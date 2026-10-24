@@ -119,7 +119,8 @@ jobs:
           rcs=$(grep -E "^RC_" /tmp/check.log | tr '\n' ' ')
           msg=$(grep -E "^e: |error:|What went wrong|Caused by|Execution failed|FAILED|Lint found|Violations|tests completed" /tmp/check.log | head -30 | cut -c1-300 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
           lint=$(python3 .github/scripts/lint_errors.py)
-          echo "::warning title=CHECK-RESULT::$rcs%0A$lint%0A$msg"
+          tests=$(python3 .github/scripts/test_failures.py)
+          echo "::warning title=CHECK-RESULT::$rcs%0A$lint%0A$tests%0A$msg"
 
       - name: Build debug Trime
         run: |
