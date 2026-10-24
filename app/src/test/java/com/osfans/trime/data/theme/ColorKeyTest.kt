@@ -114,5 +114,5 @@ private val LEGACY_BUILTIN_FALLBACK_COLORS =
         "long_text_color" to "key_text_color",
         "long_text_back_color" to "key_back_color",
     ).also {
-        check(it.size == 49) { "historical fallback table changed: ${it.size}" }
+        check(it.size == 50) { "historical fallback table changed: ${it.size}" }
     }
