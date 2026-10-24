@@ -13,7 +13,7 @@ class LegacyKeyNameCompatibilityTest :
     BehaviorSpec({
         beforeTest {
             KeyCode.androidKeyNameToCode = { name ->
-                if (name == "KEYCODE_HELP") KeyEvent.KEYCODE_HELP else 0
+                if (name == "HELP") KeyEvent.KEYCODE_HELP else 0
             }
         }
         afterSpec {

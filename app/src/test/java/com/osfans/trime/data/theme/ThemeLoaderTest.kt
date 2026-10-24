@@ -159,7 +159,7 @@ class ThemeLoaderTest :
                 val result =
                     ThemeLoader.loadFromSource(
                         "theme",
-                        sourceFile("name: t\nheight: 5\nstyle: {}\npreset_color_schemes: {default: {}}\n"),
+                        sourceFile("name: t\nbogus_key: 5\nstyle: {}\npreset_color_schemes: {default: {}}\n"),
                         noResources,
                     )
                 val findings = (result as? ThemeLoader.ThemeLoadResult.Success)?.findings
@@ -293,14 +293,14 @@ class ThemeLoaderTest :
                             name: fixture
                             style: {candidate_texts_size: 12}
                             preset_color_schemes: {default: {back_color: "#000000"}}
-                            height: 5
+                            bogus_key: 5
                             """.trimIndent(),
                         ).mapping!!,
                     )
                 result.shouldBeInstanceOf<ThemeLoader.ThemeLoadResult.Success>().theme.name shouldBe "fixture"
                 lines.filter { "unknown key" in it } shouldBe
                     listOf(
-                        "I Theme 'fixture': unknown key 'height' in ''; the runtime ignores it",
+                        "I Theme 'fixture': unknown key 'bogus_key' in ''; the runtime ignores it",
                         "W Theme 'fixture': unknown key 'candidate_texts_size' in 'style'; the runtime ignores it",
                     )
             }

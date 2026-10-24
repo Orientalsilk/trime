@@ -51,7 +51,7 @@ class ColorKeyTest :
             Then("keys without a chain entry are the terminals requested by code") {
                 val terminals = ColorKey.entries.filter { ColorKey.fallbackOf(it) == null }
                 terminals.map { it.key } shouldContainExactlyInAnyOrder
-                    listOf("back_color", "text_color", "candidate_border_color")
+                    listOf("back_color", "text_color")
             }
         }
     })
@@ -65,6 +65,8 @@ private val LEGACY_BUILTIN_FALLBACK_COLORS =
         "candidate_text_color" to "text_color",
         "comment_text_color" to "candidate_text_color",
         "border_color" to "back_color",
+        // Added for legacy themes that never define candidate_border_color.
+        "candidate_border_color" to "border_color",
         "candidate_separator_color" to "border_color",
         "hilited_text_color" to "text_color",
         "hilited_back_color" to "back_color",
