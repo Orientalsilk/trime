@@ -133,6 +133,13 @@ jobs:
           fi
           exit $rc
 
+      - name: Report native build type
+        continue-on-error: true
+        run: |
+          bt=$(grep -rh "CMAKE_BUILD_TYPE:" app/.cxx --include=CMakeCache.txt | sort -u | tr '\n' ' ')
+          fl=$(grep -rh "CMAKE_CXX_FLAGS_RELEASE:\|CMAKE_CXX_FLAGS_DEBUG:" app/.cxx --include=CMakeCache.txt | sort -u | tr '\n' ' ')
+          echo "::warning title=NATIVE-BUILD::$bt $fl"
+
       - name: Add JNI cache
         if: ${{ !steps.jni-cache.outputs.cache-hit }}
         shell: bash
