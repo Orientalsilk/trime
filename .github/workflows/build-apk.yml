@@ -83,7 +83,7 @@ jobs:
         id: jni-cache
         with:
           path: "app/prebuilt"
-          key: linux-trime-jni-debug-${{ steps.cache-hash.outputs.native-cache-hash }}
+          key: linux-trime-jni-debug-o2-${{ steps.cache-hash.outputs.native-cache-hash }}
 
       - name: Remove duplicate sherpa libs from cached prebuilt
         shell: bash
