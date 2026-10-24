@@ -49,7 +49,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 object SherpaVoice {
     private const val SAMPLE_RATE = 16000
     private const val STATUS_LOADING = "正在准备语音识别…"
-    private const val STATUS_LISTENING_HINT = ""
     private const val NO_SPEECH_REMINDER_MS = 6_000L
     private const val AUTO_STOP_AFTER_SPEECH_SILENCE_MS = 2_500L
     private const val AUTO_STOP_NO_SPEECH_MS = 12_000L
@@ -104,6 +103,16 @@ object SherpaVoice {
     @Volatile
     private var recognizer: OnlineRecognizer? = null
     private var punctuation: OfflinePunctuation? = null
+
+    // How many voice keys are currently on screen. Themes that have none (voice started from the
+    // toolbar, say) get a short status line in the text field instead of the on-key waveform.
+    private val indicatorCount = java.util.concurrent.atomic.AtomicInteger(0)
+
+    fun indicatorAttached(attached: Boolean) {
+        if (attached) indicatorCount.incrementAndGet() else indicatorCount.updateAndGet { maxOf(0, it - 1) }
+    }
+
+    private fun preview(held: String): String = if (held.isEmpty() && indicatorCount.get() == 0) "🎙 请说话…" else held
 
     /** Add punctuation to a finished utterance; falls back to the raw text if the model is missing. */
     private fun punctuate(
@@ -394,6 +403,8 @@ object SherpaVoice {
             val buffer = ShortArray(SAMPLE_RATE / 10)
             var lastShown = ""
             var lastCommitted = ""
+            var held = ""
+            val punct = { raw: String -> punctuate(dir, raw) }
             var committedAny = false
             var heardSpeech = false
             var lastActivityAt = SystemClock.elapsedRealtime()
@@ -404,7 +415,7 @@ object SherpaVoice {
             recordingStarted = true
             setPhase(Phase.LISTENING)
             // Prefer in-field hint over a second toast so the keyboard feels quieter.
-            showComposing(service, STATUS_LISTENING_HINT)
+            showComposing(service, preview(held))
 
             while (
                 currentCoroutineContext()[Job]?.isActive != false &&
@@ -442,27 +453,31 @@ object SherpaVoice {
                 val text = rec.getResult(stream).text.trim()
                 if (rec.isEndpoint(stream)) {
                     if (text.isNotBlank()) {
-                        val punctuated = punctuate(dir, text)
-                        val toCommit = withOptionalSpace(lastCommitted, punctuated)
-                        commit(service, toCommit)
-                        lastCommitted = punctuated
-                        committedAny = true
+                        if (text != held) {
+                            val older = VoiceText.commitHeld(held, text, punct)
+                            if (older.isNotBlank()) {
+                                commit(service, withOptionalSpace(lastCommitted, older))
+                                lastCommitted = older
+                                committedAny = true
+                            }
+                            held = text
+                        }
                         heardSpeech = true
                         lastActivityAt = SystemClock.elapsedRealtime()
                         silenceReminderShown = false
                     }
                     lastShown = ""
                     rec.reset(stream)
-                    showComposing(service, STATUS_LISTENING_HINT)
+                    showComposing(service, preview(held))
                 } else if (text != lastShown) {
                     lastShown = text
                     if (text.isNotBlank()) {
                         heardSpeech = true
                         lastActivityAt = SystemClock.elapsedRealtime()
                         silenceReminderShown = false
-                        showComposing(service, text)
+                        showComposing(service, VoiceText.glue(held, text))
                     } else if (lastShown.isEmpty()) {
-                        showComposing(service, STATUS_LISTENING_HINT)
+                        showComposing(service, preview(held))
                     }
                 }
 
@@ -491,13 +506,19 @@ object SherpaVoice {
                 rec.decode(stream)
             }
             val finalText = rec.getResult(stream).text.trim().ifBlank { lastShown.trim() }
-            if (finalText.isNotBlank()) {
-                val toCommit = withOptionalSpace(lastCommitted, punctuate(dir, finalText))
-                // Avoid re-committing the exact same endpoint text when auto-stop races endpoint.
-                if (toCommit.trim() != lastCommitted.trim()) {
-                    commit(service, toCommit)
+            if (finalText.isNotBlank() && finalText != held) {
+                val older = VoiceText.commitHeld(held, finalText, punct)
+                if (older.isNotBlank()) {
+                    commit(service, withOptionalSpace(lastCommitted, older))
+                    lastCommitted = older
                     committedAny = true
                 }
+                held = finalText
+            }
+            val last = VoiceText.finishHeld(held, punct)
+            if (last.isNotBlank()) {
+                commit(service, withOptionalSpace(lastCommitted, last))
+                committedAny = true
             }
             showComposing(service, "")
             if (committedAny) {

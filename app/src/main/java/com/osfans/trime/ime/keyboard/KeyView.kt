@@ -58,12 +58,12 @@ class KeyView(
     private val voiceStateListener: () -> Unit = { postInvalidate() }
     private val voiceTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textAlign = Paint.Align.CENTER }
 
-    // The voice action can be bound to a tap or to a long press (e.g. the space bar).
-    private val isVoiceKey: Boolean
-        get() =
-            listOf(KeyBehavior.CLICK, KeyBehavior.LONG_CLICK).any {
-                key.getAction(it)?.code == KeyEvent.KEYCODE_VOICE_ASSIST
-            }
+    // The voice action may be bound to any gesture of a key (tap, long press, double tap, swipe),
+    // so themes can place it wherever they like, e.g. on a long press of the space bar.
+    private val isVoiceKey: Boolean by lazy {
+        voiceBehaviors.any { key.getAction(it)?.code == KeyEvent.KEYCODE_VOICE_ASSIST }
+    }
+    private var voiceIndicatorRegistered = false
 
     private var cachedIcon: IconicsDrawable? = null
     private var cachedIconName: String? = null
@@ -265,11 +265,19 @@ class KeyView(
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
-        if (isVoiceKey) SherpaVoice.addStateListener(voiceStateListener)
+        if (isVoiceKey) {
+            SherpaVoice.addStateListener(voiceStateListener)
+            SherpaVoice.indicatorAttached(true)
+            voiceIndicatorRegistered = true
+        }
     }
 
     override fun onDetachedFromWindow() {
-        if (isVoiceKey) SherpaVoice.removeStateListener(voiceStateListener)
+        if (voiceIndicatorRegistered) {
+            SherpaVoice.removeStateListener(voiceStateListener)
+            SherpaVoice.indicatorAttached(false)
+            voiceIndicatorRegistered = false
+        }
         super.onDetachedFromWindow()
     }
 
@@ -496,5 +504,18 @@ class KeyView(
                 canvas.drawText(lines[i], centerX, lineY, symbolPaint)
             }
         }
+    }
+
+    private companion object {
+        val voiceBehaviors =
+            listOf(
+                KeyBehavior.CLICK,
+                KeyBehavior.LONG_CLICK,
+                KeyBehavior.DOUBLE_CLICK,
+                KeyBehavior.SWIPE_UP,
+                KeyBehavior.SWIPE_DOWN,
+                KeyBehavior.SWIPE_LEFT,
+                KeyBehavior.SWIPE_RIGHT,
+            )
     }
 }
