@@ -4,6 +4,10 @@
 
 cmake_minimum_required(VERSION 3.18.0)
 
+# Always build the native code optimised, even for debug APKs. At -O0 the Rime engine, the Lua
+# interpreter and OpenCC are several times slower, which is felt as typing lag.
+set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
+
 project(trime VERSION 3.0.0)
 
 # for reproducible build
