@@ -64,6 +64,18 @@ class KeyView(
     }
     private var voiceIndicatorRegistered = false
 
+    // Voice on a long press is hold-to-talk: it listens until the finger is lifted.
+    private val isHoldVoiceKey: Boolean by lazy {
+        key.getAction(KeyBehavior.LONG_CLICK)?.code == KeyEvent.KEYCODE_VOICE_ASSIST
+    }
+    private var voiceHolding = false
+
+    private fun endVoiceHold() {
+        if (!voiceHolding) return
+        voiceHolding = false
+        SherpaVoice.stop()
+    }
+
     private var cachedIcon: IconicsDrawable? = null
     private var cachedIconName: String? = null
 
@@ -110,6 +122,7 @@ class KeyView(
 
         onRelease = { behavior, isFromLongPress ->
             if (isFromLongPress) {
+                endVoiceHold()
                 if (hasPopup) {
                     val triggerAction = PopupAction.TriggerAction(id)
                     popup.listener.onPopupAction(triggerAction)
@@ -180,6 +193,10 @@ class KeyView(
                 showPopupKeyboard()
             } else if (hasLongPress) {
                 key.getAction(KeyBehavior.LONG_CLICK)?.let {
+                    if (isHoldVoiceKey) {
+                        voiceHolding = true
+                        SherpaVoice.requestHold()
+                    }
                     processKeyAction(it, KeyBehavior.LONG_CLICK)
                     setPressedState(false)
                     dismissPopupPreview()
@@ -194,6 +211,7 @@ class KeyView(
         }
 
         onCancel = {
+            endVoiceHold()
             deletedTextBuffer.clear()
             setPressedState(false)
             dismissPopupPreview()

@@ -42,9 +42,11 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Offline streaming voice input powered by sherpa-onnx (prebuilt libraries).
  *
- * Tap the voice key to start listening, tap again to stop.
+ * Hold the voice key (long press on space) to keep listening; release to finish.
+ * Started any other way (toolbar, tap-bound key) it is tap to start, tap again to stop.
  * Partial results are shown as composing text; finished sentences are committed.
- * Listening also ends automatically after a short natural pause (more human-like).
+ * Only the tap mode also ends by itself after a short natural pause; while the key is held
+ * it keeps listening through pauses until the finger is lifted.
  */
 object SherpaVoice {
     private const val SAMPLE_RATE = 16000
@@ -196,15 +198,30 @@ object SherpaVoice {
     val isListening: Boolean
         get() = listenJob?.isActive == true
 
+    // Set by the key that is being held, consumed by the next toggle(): the session then runs
+    // until the key is released instead of stopping after a pause.
+    @Volatile
+    private var holdNext = false
+
+    @Volatile
+    private var holdMode = false
+
+    fun requestHold() {
+        holdNext = true
+    }
+
     /**
      * @return false if sherpa-onnx is unavailable, so the caller can fall back to another voice input.
      */
     fun toggle(service: TrimeInputMethodService): Boolean {
+        val hold = holdNext
+        holdNext = false
         if (!nativeOk) return false
         if (isListening) {
             stop()
             toast(service.applicationContext, "正在结束…")
         } else {
+            holdMode = hold
             start(service)
         }
         return true
@@ -236,7 +253,7 @@ object SherpaVoice {
             ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) !=
             PackageManager.PERMISSION_GRANTED
         ) {
-            toast(context, "需要麦克风权限。授权后回到键盘，再点一次语音键", Toast.LENGTH_LONG)
+            toast(context, "需要麦克风权限。授权后回到键盘，再试一次语音", Toast.LENGTH_LONG)
             context.startActivity(
                 Intent(context, MicPermissionActivity::class.java)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
@@ -428,13 +445,16 @@ object SherpaVoice {
             ) {
                 val now = SystemClock.elapsedRealtime()
 
-                // Natural end-of-utterance: stop after a short pause once something was recognized.
-                if (heardSpeech && now - lastActivityAt >= AUTO_STOP_AFTER_SPEECH_SILENCE_MS) {
-                    break
-                }
-                // No speech at all for a while, stop instead of hanging forever.
-                if (!heardSpeech && now - lastActivityAt >= AUTO_STOP_NO_SPEECH_MS) {
-                    break
+                // While the key is held, only releasing it ends the session.
+                if (!holdMode) {
+                    // Natural end-of-utterance: stop after a short pause once something was recognized.
+                    if (heardSpeech && now - lastActivityAt >= AUTO_STOP_AFTER_SPEECH_SILENCE_MS) {
+                        break
+                    }
+                    // No speech at all for a while, stop instead of hanging forever.
+                    if (!heardSpeech && now - lastActivityAt >= AUTO_STOP_NO_SPEECH_MS) {
+                        break
+                    }
                 }
 
                 val n = audioRecord.read(buffer, 0, buffer.size)
@@ -528,7 +548,7 @@ object SherpaVoice {
             if (committedAny) {
                 toast(context, "已完成")
             } else {
-                toast(context, "没有识别到内容，点语音键再说一次")
+                toast(context, if (holdMode) "没有识别到内容，请按住空格再说一次" else "没有识别到内容，点语音键再说一次")
             }
         } finally {
             record?.let {
