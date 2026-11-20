@@ -118,18 +118,27 @@ class InputBarDelegate(override val di: DI) :
         evalAlwaysUiState()
     }
 
-    /** The SMS permission is asked for once, the first time the keyboard opens with the feature on. */
-    private fun askSmsPermissionOnce() {
-        if (!smsCodeSuggestion || SmsCodeStore.permissionAsked(context)) return
+    // True while the suggestion slot shows the "turn on the SMS permission" hint.
+    private var showingSmsHint = false
+    private var lastSmsHintAt = 0L
+
+    /** Without the SMS permission no code can be read, so offer a tap-to-enable hint (at most every 30 min). */
+    private fun showSmsPermissionHint() {
+        if (!smsCodeSuggestion) return
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) ==
             PackageManager.PERMISSION_GRANTED
         ) {
             return
         }
-        SmsCodeStore.markPermissionAsked(context)
-        context.startActivity(
-            Intent(context, SmsPermissionActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-        )
+        val now = System.currentTimeMillis()
+        if (now - lastSmsHintAt < 30 * 60_000L) return
+        lastSmsHintAt = now
+        alwaysUi.clipboardUi.text.text = "点此开启短信权限，自动读取验证码"
+        shownSmsCode = null
+        showingSmsHint = true
+        isClipboardFresh = true
+        launchClipboardTimeoutJob(15_000L)
+        evalAlwaysUiState()
     }
 
     @Keep
@@ -140,6 +149,7 @@ class InputBarDelegate(override val di: DI) :
                 isClipboardFresh = false
             } else {
                 shownSmsCode = null
+                showingSmsHint = false
                 alwaysUi.clipboardUi.text.text = if (it.sensitive && clipboardMaskSensitive) {
                     ClipboardEntity.BULLET.repeat(min(42, it.text.length))
                 } else {
@@ -158,6 +168,7 @@ class InputBarDelegate(override val di: DI) :
         clipboardTimeoutJob = service.lifecycleScope.launch {
             delay(timeout)
             shownSmsCode = null
+            showingSmsHint = false
             isClipboardFresh = false
             clipboardTimeoutJob = null
             evalAlwaysUiState()
@@ -198,12 +209,19 @@ class InputBarDelegate(override val di: DI) :
             }
             clipboardUi.suggestionView.apply {
                 setOnClickListener {
+                    if (showingSmsHint) {
+                        context.startActivity(
+                            Intent(context, SmsPermissionActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        )
+                        dismissClipboardSuggestion()
+                        return@setOnClickListener
+                    }
                     val content = shownSmsCode ?: ClipboardHelper.lastEntity?.text
                     content?.let { service.commitText(it) }
                     dismissClipboardSuggestion()
                 }
                 setOnLongClickListener {
-                    if (shownSmsCode != null) return@setOnLongClickListener true
+                    if (shownSmsCode != null || showingSmsHint) return@setOnLongClickListener true
                     ClipboardHelper.lastEntity?.let {
                         AppUtils.launchClipEdit(context, it.id, ClipEditActivity.FROM_CLIPBOARD)
                     }
@@ -217,6 +235,7 @@ class InputBarDelegate(override val di: DI) :
     }
 
     private fun dismissClipboardSuggestion() {
+        showingSmsHint = false
         if (shownSmsCode != null) {
             // A code that was used or dismissed is not offered again.
             SmsCodeStore.clear(context)
@@ -344,9 +363,13 @@ class InputBarDelegate(override val di: DI) :
     }
 
     override fun onStartInput(info: EditorInfo) {
-        askSmsPermissionOnce()
         // A code that arrived while the keyboard was away is offered as soon as it opens.
-        SmsCodeStore.fresh(context)?.let { if (it.receivedAt != shownSmsAt) showSmsCode(it) }
+        val pending = SmsCodeStore.fresh(context)
+        if (pending != null) {
+            if (pending.receivedAt != shownSmsAt) showSmsCode(pending)
+        } else {
+            showSmsPermissionHint()
+        }
         evalAlwaysUiState()
     }
 

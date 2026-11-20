@@ -62,7 +62,6 @@ object SmsCodeStore {
     private const val PREFS = "sms_code"
     private const val KEY_CODE = "code"
     private const val KEY_TIME = "time"
-    private const val KEY_ASKED = "permission_asked"
 
     private val listeners = WeakHashSet<Listener>()
 
@@ -95,12 +94,5 @@ object SmsCodeStore {
 
     fun clear(context: Context) {
         prefs(context).edit().remove(KEY_CODE).remove(KEY_TIME).apply()
-    }
-
-    /** The permission is asked for only once; after that the person can grant it in system settings. */
-    fun permissionAsked(context: Context): Boolean = prefs(context).getBoolean(KEY_ASKED, false)
-
-    fun markPermissionAsked(context: Context) {
-        prefs(context).edit().putBoolean(KEY_ASKED, true).apply()
     }
 }
