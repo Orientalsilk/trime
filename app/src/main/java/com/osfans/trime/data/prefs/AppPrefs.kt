@@ -7,9 +7,7 @@ package com.osfans.trime.data.prefs
 
 import android.content.Context
 import android.content.SharedPreferences
-import android.os.Build
 import androidx.annotation.Keep
-import androidx.annotation.RequiresApi
 import androidx.core.content.edit
 import androidx.preference.PreferenceManager
 import com.osfans.trime.R
@@ -394,6 +392,7 @@ class AppPrefs(
             const val CLIPBOARD_SUGGESTION = "clipboard_suggestion"
             const val CLIPBOARD_SUGGESTION_TIMEOUT = "clipboard_suggestion_timeout"
             const val CLIPBOARD_RETURN_AFTER_PASTE = "clipboard_return_after_paste"
+            const val CLIPBOARD_MASK_SENSITIVE = "clipboard_mask_sensitive"
         }
         val clipboardListening = switch(R.string.clipboard_listening, CLIPBOARD_LISTENING, true)
         val clipboardLimit = int(
@@ -431,6 +430,11 @@ class AppPrefs(
             CLIPBOARD_RETURN_AFTER_PASTE,
             true,
         ) { clipboardListening.getValue() }
+        val clipboardMaskSensitive = switch(
+            R.string.clipboard_mask_sensitive,
+            CLIPBOARD_MASK_SENSITIVE,
+            true,
+        ) { clipboardListening.getValue() }
     }
 
     class Advanced(
@@ -462,7 +466,6 @@ class AppPrefs(
         )
     }
 
-    @RequiresApi(Build.VERSION_CODES.N)
     fun syncToDeviceEncryptedStorage() {
         val ctx = appContext.createDeviceProtectedStorageContext()
         val sp = PreferenceManager.getDefaultSharedPreferences(ctx)

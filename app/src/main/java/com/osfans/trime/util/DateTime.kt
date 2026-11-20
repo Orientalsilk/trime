@@ -6,9 +6,7 @@
 package com.osfans.trime.util
 
 import android.icu.text.DateFormat
-import android.icu.util.Calendar
 import android.icu.util.ULocale
-import android.os.Build
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -45,17 +43,10 @@ fun customFormatDateTime(
             "" to pattern
         }
     val date = timeMillis?.let { Date(it) } ?: Date()
-    val loc = Locale.forLanguageTag(locale)
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-        if (option.isEmpty()) {
-            DateFormat.getDateInstance(DateFormat.LONG, loc).format(date)
-        } else {
-            val cal = Calendar.getInstance(ULocale(locale))
-            android.icu.text
-                .SimpleDateFormat(option, loc)
-                .format(cal)
-        }
+    val loc = ULocale(locale)
+    return if (option.isEmpty()) {
+        DateFormat.getDateInstance(DateFormat.LONG, loc).format(date)
     } else {
-        SimpleDateFormat(option, loc).format(date)
+        android.icu.text.SimpleDateFormat(option, loc).format(date)
     }
 }

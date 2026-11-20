@@ -2,7 +2,6 @@
  * SPDX-FileCopyrightText: 2015 - 2025 Rime community
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
-@file:Suppress("UnstableApiUsage")
 
 plugins {
     id("com.osfans.trime.app-convention")
@@ -19,14 +18,14 @@ plugins {
 android {
     namespace = "com.osfans.trime"
     compileSdk = 37
-    buildToolsVersion = "36.0.0"
+    buildToolsVersion = "37.0.0"
 
     defaultConfig {
         applicationId = "com.osfans.trime"
-        minSdk = 21
+        minSdk = 26
         targetSdk = 37
-        versionCode = 20261101
-        versionName = "3.3.13"
+        versionCode = 20270101
+        versionName = "3.3.14"
 
         multiDexEnabled = true
         buildConfigField("String", "BUILDER", "\"${project.builder}\"")
@@ -151,7 +150,7 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.autofill)
     implementation(libs.androidx.constraintlayout)
-    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.core)
     implementation(libs.androidx.navigation.fragment)
     implementation(libs.androidx.navigation.ui)
     implementation(libs.androidx.paging.runtime.ktx)

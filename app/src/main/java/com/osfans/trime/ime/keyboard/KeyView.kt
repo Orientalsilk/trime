@@ -24,7 +24,6 @@ import com.osfans.trime.ime.popup.PopupDelegate
 import com.osfans.trime.util.sp
 import com.osfans.trime.voice.SherpaVoice
 import splitties.dimensions.dp
-import timber.log.Timber
 
 @SuppressLint("ClickableViewAccessibility", "ViewConstructor")
 class KeyView(
@@ -72,6 +71,15 @@ class KeyView(
     private val cachedBounds = Rect()
     private var boundsValid = false
 
+    private val labelFontMetrics = Paint.FontMetrics()
+    private var labelMetricsSize = Float.NaN
+    private val symbolFontMetrics = Paint.FontMetrics()
+    private var symbolMetricsSize = Float.NaN
+    private var cachedSymbolText: String? = null
+    private var cachedSymbolLines: List<String> = emptyList()
+    private var iconColorFilter: PorterDuffColorFilter? = null
+    private var iconColorFilterColor = 0
+
     val bounds: Rect
         get() = cachedBounds.also {
             if (!boundsValid) updateBounds()
@@ -101,7 +109,6 @@ class KeyView(
         }
 
         onRelease = { behavior, isFromLongPress ->
-            Timber.d("KeyView release: label=${key.getLabel()}, behavior=$behavior, fromLongPress=$isFromLongPress")
             if (isFromLongPress) {
                 if (hasPopup) {
                     val triggerAction = PopupAction.TriggerAction(id)
@@ -206,8 +213,6 @@ class KeyView(
     }
 
     private fun processKeyAction(action: KeyAction, behavior: KeyBehavior) {
-        Timber.d("processKeyAction: label=${key.getLabel()}, code=${action.code}, type=$behavior")
-
         if (action.isModifierKey) {
             keyboard.clickModifierKey(
                 action.isShiftLock xor (behavior == KeyBehavior.LONG_CLICK),
@@ -420,8 +425,11 @@ class KeyView(
 
             val centerX = (width - paddingLeft - paddingRight) / 2f + paddingLeft
             val centerY = (height - paddingTop - paddingBottom) / 2f + paddingTop
-            val fontMetrics = textPaint.fontMetrics
-            val adjustmentY = -(fontMetrics.ascent + fontMetrics.descent) / 2f
+            if (labelMetricsSize != textSize) {
+                textPaint.getFontMetrics(labelFontMetrics)
+                labelMetricsSize = textSize
+            }
+            val adjustmentY = -(labelFontMetrics.ascent + labelFontMetrics.descent) / 2f
 
             canvas.drawText(label, centerX + sp(key.keyTextOffsetX), centerY + adjustmentY + sp(key.keyTextOffsetY), textPaint)
         }
@@ -438,19 +446,22 @@ class KeyView(
     ) {
         val halfSize = size / 2
 
-        val cmdName = iconName.toIconName()
-        val icon = if (cachedIconName == cmdName) {
+        val icon = if (cachedIconName == iconName) {
             cachedIcon!!
         } else {
-            IconicsDrawable(context, cmdName).apply {
+            IconicsDrawable(context, iconName.toIconName()).apply {
                 sizeDp = size
             }.also {
                 cachedIcon = it
-                cachedIconName = cmdName
+                cachedIconName = iconName
             }
         }
 
-        icon.colorFilter = PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN)
+        if (iconColorFilterColor != color || iconColorFilter == null) {
+            iconColorFilter = PorterDuffColorFilter(color, PorterDuff.Mode.SRC_IN)
+            iconColorFilterColor = color
+        }
+        icon.colorFilter = iconColorFilter
 
         val centerX = (width - paddingLeft - paddingRight) / 2f + paddingLeft + sp(offsetX)
 
@@ -487,8 +498,16 @@ class KeyView(
                 typeface = theme.fonts.symbol
             }
 
-            val lines = text.split("\n")
-            val fontMetrics = symbolPaint.fontMetrics
+            if (cachedSymbolText != text) {
+                cachedSymbolLines = text.split("\n")
+                cachedSymbolText = text
+            }
+            val lines = cachedSymbolLines
+            if (symbolMetricsSize != textSize) {
+                symbolPaint.getFontMetrics(symbolFontMetrics)
+                symbolMetricsSize = textSize
+            }
+            val fontMetrics = symbolFontMetrics
             val lineHeight = fontMetrics.descent - fontMetrics.ascent
             val totalHeight = lineHeight * lines.size
 

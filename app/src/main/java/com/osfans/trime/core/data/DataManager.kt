@@ -6,7 +6,6 @@
 package com.osfans.trime.core.data
 
 import android.content.res.AssetManager
-import android.os.Build
 import com.osfans.trime.TrimeApplication
 import com.osfans.trime.util.FileUtils
 import com.osfans.trime.util.appContext
@@ -27,15 +26,12 @@ object DataManager {
 
     private fun serializeDataChecksums(checksums: DataChecksums): String = json.encodeToString(checksums)
 
-    // If Android version supports direct boot, we put the hierarchy in device encrypted storage
-    // instead of credential encrypted storage so that data can be accessed before user unlock
-    private val dataDir: File =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            Timber.d("Using device protected storage")
-            appContext.createDeviceProtectedStorageContext().dataDir
-        } else {
-            File(appContext.applicationInfo.dataDir)
-        }
+    // The record describes one deployed tree, and the tree's directory changes with the
+    // boot mode: the device-protected files dir before the first unlock, the external
+    // files dir afterwards. Keep one record per mode in the internal files dir, or a
+    // normal-mode run would overwrite the direct-boot record while deploying elsewhere,
+    // and the next direct boot would trust it and skip deploying its own copy.
+    private val filesDir get() = TrimeApplication.getInstance().directBootAwareContext.filesDir
 
     private fun AssetManager.dataChecksums(): DataChecksums = open(DATA_CHECKSUMS_NAME)
         .bufferedReader()
@@ -68,7 +64,7 @@ object DataManager {
     }
 
     fun sync() = lock.withLock {
-        val destChecksumsFile = File(dataDir, DATA_CHECKSUMS_NAME)
+        val destChecksumsFile = File(filesDir, DATA_CHECKSUMS_NAME)
         val oldChecksums =
             destChecksumsFile
                 .runCatching { deserializeDataChecksums(bufferedReader().use { it.readText() }) }

@@ -16,7 +16,8 @@ import com.google.android.flexbox.FlexWrap
 import com.google.android.flexbox.FlexboxLayout
 import com.google.android.flexbox.FlexboxLayoutManager
 import com.osfans.trime.R
-import com.osfans.trime.data.db.CollectionHelper
+import com.osfans.trime.data.clip.FavoriteHelper
+import com.osfans.trime.data.clip.markSensitive
 import com.osfans.trime.data.theme.Theme
 import com.osfans.trime.data.theme.ThemeScope
 import com.osfans.trime.ime.core.TrimeInputMethodService
@@ -25,13 +26,22 @@ import com.osfans.trime.ime.window.BoardWindow
 import com.osfans.trime.ime.window.BoardWindowManager
 import com.osfans.trime.util.NativeTokenizer
 import com.osfans.trime.util.toast
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.kodein.di.DI
 import org.kodein.di.instance
 import splitties.dimensions.dp
 import splitties.systemservices.clipboardManager
+import timber.log.Timber
 
-class SegmentsWindow(di: DI, private val source: String) : BoardWindow.BarBoardWindow(di) {
+class SegmentsWindow(
+    di: DI,
+    private val source: String,
+    private val sensitive: Boolean = false,
+) : BoardWindow.BarBoardWindow(di) {
     private val service: TrimeInputMethodService by instance()
     private val scope: ThemeScope by instance()
     private val theme: Theme get() = scope.theme
@@ -97,9 +107,11 @@ class SegmentsWindow(di: DI, private val source: String) : BoardWindow.BarBoardW
             starButton.apply {
                 isEnabled = false
                 setOnClickListener {
+                    // Favorites are stored as plain text, so a sensitive clip must never get there.
+                    if (sensitive) return@setOnClickListener
                     val text = adapter.joinedSegments
                     service.lifecycleScope.launch {
-                        CollectionHelper.addNewBean(text)
+                        FavoriteHelper.addNewEntity(text)
                     }
                     ctx.toast(R.string.star_success)
                 }
@@ -108,7 +120,10 @@ class SegmentsWindow(di: DI, private val source: String) : BoardWindow.BarBoardW
                 isEnabled = false
                 setOnClickListener {
                     val text = adapter.joinedSegments
-                    clipboardManager.setPrimaryClip(ClipData.newPlainText("", text))
+                    val clip = ClipData.newPlainText("", text)
+                    // Keep the flag, or the copy would be recorded as a new plaintext row.
+                    if (sensitive) clip.markSensitive()
+                    clipboardManager.setPrimaryClip(clip)
                     windowManager.attachWindow(KeyboardWindow)
                 }
             }
@@ -120,7 +135,14 @@ class SegmentsWindow(di: DI, private val source: String) : BoardWindow.BarBoardW
         FlexboxLayout(context).apply {
             flexDirection = FlexDirection.ROW_REVERSE
             alignItems = AlignItems.CENTER
-            val buttons = listOf(ui.selectButton, ui.copyButton, ui.starButton, ui.searchButton, ui.shareButton)
+            val buttons =
+                buildList {
+                    add(ui.selectButton)
+                    add(ui.copyButton)
+                    if (!sensitive) add(ui.starButton)
+                    add(ui.searchButton)
+                    add(ui.shareButton)
+                }
             val size = theme.style.run { candidateViewHeight + commentHeight }
             buttons.forEachIndexed { index, button ->
                 val lParams = FlexboxLayout.LayoutParams(dp(size), dp(size))
@@ -135,9 +157,6 @@ class SegmentsWindow(di: DI, private val source: String) : BoardWindow.BarBoardW
     override fun onCreateBarView(): View = toolbarButtons
 
     private fun onSelectionChanged() {
-        val joined = adapter.joinedSegments
-        service.updateComposingText(joined)
-
         if (adapter.isAllSelected) {
             ui.setSelectButtonToDeselect()
         } else {
@@ -146,9 +165,32 @@ class SegmentsWindow(di: DI, private val source: String) : BoardWindow.BarBoardW
 
         val hasSelection = adapter.selectionSnapshot.isNotEmpty()
         ui.updateButtons(hasSelection)
+        previewSelection(hasSelection)
+    }
+
+    /** Writes the selection into the editor, debounced so a drag previews once instead of on every touch move. */
+    private fun previewSelection(hasSelection: Boolean) {
+        previewJob?.cancel()
+        previewJob =
+            service.lifecycleScope.launch {
+                delay(PREVIEW_DEBOUNCE_MS)
+                val joined = if (hasSelection) adapter.joinedSegments else ""
+                if (joined == previewedText) return@launch
+                try {
+                    if (!service.updateComposingText(joined)) return@launch
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to preview the selected segments")
+                    return@launch
+                }
+                previewedText = joined
+            }
     }
 
     private var viewCreated = false
+    private var previewJob: Job? = null
+
+    /** Last text written into the editor, to skip no-op updates. */
+    private var previewedText = ""
 
     override fun onCreateView(): View {
         viewCreated = true
@@ -162,15 +204,26 @@ class SegmentsWindow(di: DI, private val source: String) : BoardWindow.BarBoardW
     }
 
     override fun onAttached() {
-        val segments = NativeTokenizer.tokenize(source)
+        ui.recyclerView.addOnItemTouchListener(touchListener)
         service.lifecycleScope.launch {
+            val segments = withContext(Dispatchers.Default) { NativeTokenizer.tokenize(source) }
+            if (!windowManager.isAttached(this@SegmentsWindow)) return@launch
             adapter.submitList(segments)
         }
-        ui.recyclerView.addOnItemTouchListener(touchListener)
     }
 
     override fun onDetached() {
+        previewJob?.cancel()
+        previewJob = null
         ui.recyclerView.removeOnItemTouchListener(touchListener)
-        service.currentInputConnection?.finishComposingText()
+        try {
+            service.currentInputConnection?.finishComposingText()
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to finish the previewed composition")
+        }
+    }
+
+    private companion object {
+        const val PREVIEW_DEBOUNCE_MS = 150L
     }
 }

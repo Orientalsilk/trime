@@ -57,10 +57,12 @@ import com.osfans.trime.util.monitorCursorAnchor
 import com.osfans.trime.util.styledFloat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.consumeEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import splitties.systemservices.clipboardManager
 import splitties.systemservices.inputMethodManager
 import timber.log.Timber
@@ -77,6 +79,19 @@ open class TrimeInputMethodService : LifecycleInputMethodService() {
     private lateinit var lastKnownConfig: Configuration
     private var inputView: InputView? = null
     private var candidatesView: CandidatesView? = null
+
+    /**
+     * Set when the framework asked for the input view before the theme was ready.
+     * [onCreateInputView] returned null then, and the window can stay up for the whole
+     * session without asking again, which is exactly how the IME comes up after a reboot.
+     */
+    private var inputViewDeferred = false
+
+    /**
+     * Editor state that [onStartInputView] could not hand to [InputView.startInput]
+     * because the view did not exist yet. Replayed once the deferred view is built.
+     */
+    private var pendingEditorInfo: EditorInfo? = null
     private val navBarManager = NavigationBarManager()
     private val inputDeviceManager = InputDeviceManager { useVirtualKeyboard, useCandidatesView ->
         postRimeJob {
@@ -200,6 +215,10 @@ open class TrimeInputMethodService : LifecycleInputMethodService() {
                 ThemeManager.init(resources.configuration)
                 ThemeManager.addOnChangedListener(onThemeChangeListener)
                 ColorManager.addOnChangedListener(onColorChangeListener)
+                // Views must be created on the main thread; whenReady runs on the Rime scope.
+                withContext(Dispatchers.Main.immediate) {
+                    createDeferredInputViewIfNeeded()
+                }
             }
         }
         InputFeedbackManager.init(this)
@@ -330,10 +349,42 @@ open class TrimeInputMethodService : LifecycleInputMethodService() {
         inputView?.updateEnterKeyLabel(currentInputEditorInfo)
     }
 
+    /**
+     * Builds the input view that [onCreateInputView] had to skip because the theme was
+     * still loading. The framework already believes the input view is shown, so it will
+     * not ask again while the window stays up — without this the window stays empty.
+     */
+    private fun createDeferredInputViewIfNeeded() {
+        if (!inputViewDeferred) return
+        val scope = themeScope ?: return
+        inputViewDeferred = false
+        Timber.d("Theme is ready, creating the deferred input view")
+        replaceInputViews(scope)
+        // An editor was already focused while the view was missing, so its state never
+        // reached the view: without replaying it the keyboard would keep the default
+        // layout instead of the one the editor asks for.
+        pendingEditorInfo?.let { info ->
+            pendingEditorInfo = null
+            Timber.d("Replaying the editor state skipped while the view was missing")
+            inputView?.startInput(info, restarting = false)
+        }
+        // The framework may have already laid the window out while the view was
+        // missing, so ask it to re-evaluate instead of waiting for the next focus change.
+        updateInputViewShown()
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        // Built keyboards are rebuildable at any time, so any memory pressure is a good
+        // moment to drop the ones that are not currently shown.
+        inputView?.trimMemory()
+    }
+
     override fun onDestroy() {
         com.osfans.trime.voice.SherpaVoice.stop()
         InputFeedbackManager.destroy()
         inputView = null
+        pendingEditorInfo = null
         recreateInputViewPrefs.forEach {
             it.unregisterOnChangeListener(recreateInputViewListener)
         }
@@ -507,6 +558,7 @@ open class TrimeInputMethodService : LifecycleInputMethodService() {
         val scope = themeScope
         if (scope == null) {
             Timber.w("ThemeScope is not ready yet; deferring input view creation")
+            inputViewDeferred = true
             return null
         }
         replaceInputViews(scope)
@@ -569,6 +621,10 @@ open class TrimeInputMethodService : LifecycleInputMethodService() {
         restarting: Boolean,
     ) {
         Timber.d("onStartInputView: restarting=$restarting")
+        // A previous startup may have been refused before the storage became reachable
+        // (for example right after a reboot); this is the point where trying again is
+        // both cheap and most likely to succeed.
+        RimeDaemon.ensureRimeStarted()
         InputFeedbackManager.startInput()
         postRimeJob {
             updateRimeOption(this)
@@ -576,7 +632,14 @@ open class TrimeInputMethodService : LifecycleInputMethodService() {
         val (useVirtualKeyboard, useCandidatesView) =
             inputDeviceManager.evaluateOnStartInputView(attribute, this)
         if (useVirtualKeyboard) {
-            inputView?.startInput(attribute, restarting)
+            val view = inputView
+            if (view != null) {
+                view.startInput(attribute, restarting)
+            } else {
+                // The deferred view is still missing; keep the state so it can be
+                // replayed (including the layout the editor asks for) once it exists.
+                pendingEditorInfo = attribute
+            }
         }
         if (useCandidatesView) {
             if (currentInputConnection?.monitorCursorAnchor() != true) {
@@ -813,13 +876,10 @@ open class TrimeInputMethodService : LifecycleInputMethodService() {
     }
 
     fun shareText(): Boolean {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            val ic = currentInputConnection ?: return false
-            val cs = ic.getSelectedText(0)
-            if (cs == null) ic.performContextMenuAction(android.R.id.selectAll)
-            return ic.performContextMenuAction(android.R.id.shareText)
-        }
-        return false
+        val ic = currentInputConnection ?: return false
+        val cs = ic.getSelectedText(0)
+        if (cs == null) ic.performContextMenuAction(android.R.id.selectAll)
+        return ic.performContextMenuAction(android.R.id.shareText)
     }
 
     /** 編輯操作 */
@@ -833,12 +893,10 @@ open class TrimeInputMethodService : LifecycleInputMethodService() {
             return false
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (prefs.keyboard.hookCtrlZY.getValue()) {
-                when (code) {
-                    KeyEvent.KEYCODE_Y -> return ic.performContextMenuAction(android.R.id.redo)
-                    KeyEvent.KEYCODE_Z -> return ic.performContextMenuAction(android.R.id.undo)
-                }
+        if (prefs.keyboard.hookCtrlZY.getValue()) {
+            when (code) {
+                KeyEvent.KEYCODE_Y -> return ic.performContextMenuAction(android.R.id.redo)
+                KeyEvent.KEYCODE_Z -> return ic.performContextMenuAction(android.R.id.undo)
             }
         }
 
@@ -946,8 +1004,9 @@ open class TrimeInputMethodService : LifecycleInputMethodService() {
         }
     }
 
-    internal fun updateComposingText(text: String) {
-        val ic = currentInputConnection ?: return
+    /** Returns false when there is no editor to write to, so a caller can retry later. */
+    internal fun updateComposingText(text: String): Boolean {
+        val ic = currentInputConnection ?: return false
         ic.beginBatchEdit()
         if (composingText.isNotEmpty() || text.isNotEmpty()) {
             if (!ic.getSelectedText(0).isNullOrEmpty()) {
@@ -960,6 +1019,7 @@ open class TrimeInputMethodService : LifecycleInputMethodService() {
         }
         composingText = text
         ic.endBatchEdit()
+        return true
     }
 
     fun getActiveText(type: Int): String {

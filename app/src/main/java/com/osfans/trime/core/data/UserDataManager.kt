@@ -7,7 +7,6 @@ package com.osfans.trime.core.data
 
 import android.annotation.SuppressLint
 import android.net.Uri
-import android.os.Build
 import android.util.Base64
 import androidx.core.util.AtomicFile
 import com.osfans.trime.TrimeApplication
@@ -92,17 +91,13 @@ object UserDataManager {
         StorageAccess.readFile(file.uri) { hashStream(it.buffered(HASH_BUFFER_SIZE)) }
     }.getOrNull()
 
-    // If Android version supports direct boot, we put the hierarchy in device encrypted storage
-    // instead of credential encrypted storage so that data can be accessed before user unlock
-    private val dataDir: File =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            Timber.d("Using device protected storage")
-            appContext.createDeviceProtectedStorageContext().dataDir
-        } else {
-            File(appContext.applicationInfo.dataDir)
-        }
+    // We put the hierarchy in device encrypted storage instead of credential encrypted
+    // storage so that data can be accessed before user unlock
+    private val dataDir: File = appContext.createDeviceProtectedStorageContext().dataDir
 
     private val externalFilesDir get() = TrimeApplication.getInstance().externalFilesDir
+
+    private val isDirectBootMode get() = TrimeApplication.getInstance().isDirectBootMode
 
     val userDataDir = File(externalFilesDir, "rime")
 
@@ -119,7 +114,14 @@ object UserDataManager {
         it.uri == externalRimeDir && it.read && it.write
     }
 
-    fun isStorageAvailable(): Boolean = !useExternalSync() || hasExternalAccess()
+    fun isStorageAvailable(): Boolean = isDirectBootMode || !useExternalSync() || hasExternalAccess()
+
+    /**
+     * Human-readable snapshot of what decides [isStorageAvailable], for logs that must
+     * explain a refused startup without a debugger attached.
+     */
+    fun storageStateDescription(): String = "directBoot=$isDirectBootMode, mode=$dataStorageMode, " +
+        "hasExternalUri=${externalRimeTreeUri.isNotEmpty()}, hasExternalAccess=${hasExternalAccess()}"
 
     fun isStorageChoiceDone(): Boolean = when (dataStorageMode) {
         DataStorageMode.APP_STORAGE -> true
@@ -158,6 +160,9 @@ object UserDataManager {
     }
 
     suspend fun sync(): Boolean = lock.withLock {
+        // The external tree lives on credential-encrypted storage and is unreachable
+        // before the first unlock; direct boot works from a device-protected copy instead.
+        if (isDirectBootMode) return@withLock true
         if (!useExternalSync()) return@withLock true
         if (!hasExternalAccess()) {
             DeployNotification.promptDataPathPermissionRevoked()
