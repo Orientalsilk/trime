@@ -252,4 +252,5 @@
     <string name="star_success">Star success</string>
     <string name="ignore_system_gesture_insets">Ignore system gesture insets</string>
     <string name="clipboard_mask_sensitive">Mask sensitive data (such as passwords)</string>
+    <string name="sms_code_suggestion">Show SMS verification codes</string>
 </resources>

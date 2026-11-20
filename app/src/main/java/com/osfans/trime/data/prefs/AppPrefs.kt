@@ -393,6 +393,7 @@ class AppPrefs(
             const val CLIPBOARD_SUGGESTION_TIMEOUT = "clipboard_suggestion_timeout"
             const val CLIPBOARD_RETURN_AFTER_PASTE = "clipboard_return_after_paste"
             const val CLIPBOARD_MASK_SENSITIVE = "clipboard_mask_sensitive"
+            const val SMS_CODE_SUGGESTION = "sms_code_suggestion"
         }
         val clipboardListening = switch(R.string.clipboard_listening, CLIPBOARD_LISTENING, true)
         val clipboardLimit = int(
@@ -435,6 +436,11 @@ class AppPrefs(
             CLIPBOARD_MASK_SENSITIVE,
             true,
         ) { clipboardListening.getValue() }
+        val smsCodeSuggestion = switch(
+            R.string.sms_code_suggestion,
+            SMS_CODE_SUGGESTION,
+            true,
+        )
     }
 
     class Advanced(

@@ -5,6 +5,9 @@
 
 package com.osfans.trime.ime.bar
 
+import android.Manifest
+import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Size
 import android.view.ContextThemeWrapper
@@ -42,6 +45,8 @@ import com.osfans.trime.ime.keyboard.KeyboardWindow
 import com.osfans.trime.ime.switches.SwitchOptionWindow
 import com.osfans.trime.ime.window.BoardWindow
 import com.osfans.trime.ime.window.BoardWindowManager
+import com.osfans.trime.sms.SmsCodeStore
+import com.osfans.trime.sms.SmsPermissionActivity
 import com.osfans.trime.ui.main.ClipEditActivity
 import com.osfans.trime.util.AppUtils
 import kotlinx.coroutines.Job
@@ -90,6 +95,43 @@ class InputBarDelegate(override val di: DI) :
     private var isClipboardFresh: Boolean = false
     private var isInlineSuggestionPresent: Boolean = false
 
+    private val smsCodeSuggestion by prefs.clipboard.smsCodeSuggestion
+
+    // The verification code currently offered in the suggestion slot (null: the slot holds the clipboard).
+    private var shownSmsCode: String? = null
+    private var shownSmsAt: Long = 0L
+
+    @Keep
+    private val onSmsCodeListener = SmsCodeStore.Listener { entry ->
+        service.lifecycleScope.launch { showSmsCode(entry) }
+    }
+
+    private fun showSmsCode(entry: SmsCodeStore.Entry) {
+        if (!smsCodeSuggestion) return
+        val remaining = SmsCodeStore.TTL_MS - (System.currentTimeMillis() - entry.receivedAt)
+        if (remaining <= 0L) return
+        alwaysUi.clipboardUi.text.text = "验证码 ${entry.code}"
+        shownSmsCode = entry.code
+        shownSmsAt = entry.receivedAt
+        isClipboardFresh = true
+        launchClipboardTimeoutJob(remaining)
+        evalAlwaysUiState()
+    }
+
+    /** The SMS permission is asked for once, the first time the keyboard opens with the feature on. */
+    private fun askSmsPermissionOnce() {
+        if (!smsCodeSuggestion || SmsCodeStore.permissionAsked(context)) return
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECEIVE_SMS) ==
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            return
+        }
+        SmsCodeStore.markPermissionAsked(context)
+        context.startActivity(
+            Intent(context, SmsPermissionActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
+
     @Keep
     private val onClipboardUpdateListener = ClipboardHelper.OnClipboardUpdateListener {
         if (!clipboardSuggestion) return@OnClipboardUpdateListener
@@ -97,6 +139,7 @@ class InputBarDelegate(override val di: DI) :
             if (it.text.isEmpty()) {
                 isClipboardFresh = false
             } else {
+                shownSmsCode = null
                 alwaysUi.clipboardUi.text.text = if (it.sensitive && clipboardMaskSensitive) {
                     ClipboardEntity.BULLET.repeat(min(42, it.text.length))
                 } else {
@@ -109,12 +152,12 @@ class InputBarDelegate(override val di: DI) :
         }
     }
 
-    private fun launchClipboardTimeoutJob() {
+    private fun launchClipboardTimeoutJob(timeout: Long = clipboardSuggestionTimeout * 1000L) {
         clipboardTimeoutJob?.cancel()
-        val timeout = clipboardSuggestionTimeout * 1000L
         if (timeout < 0L) return
         clipboardTimeoutJob = service.lifecycleScope.launch {
             delay(timeout)
+            shownSmsCode = null
             isClipboardFresh = false
             clipboardTimeoutJob = null
             evalAlwaysUiState()
@@ -155,11 +198,12 @@ class InputBarDelegate(override val di: DI) :
             }
             clipboardUi.suggestionView.apply {
                 setOnClickListener {
-                    val content = ClipboardHelper.lastEntity?.text
+                    val content = shownSmsCode ?: ClipboardHelper.lastEntity?.text
                     content?.let { service.commitText(it) }
                     dismissClipboardSuggestion()
                 }
                 setOnLongClickListener {
+                    if (shownSmsCode != null) return@setOnLongClickListener true
                     ClipboardHelper.lastEntity?.let {
                         AppUtils.launchClipEdit(context, it.id, ClipEditActivity.FROM_CLIPBOARD)
                     }
@@ -173,6 +217,11 @@ class InputBarDelegate(override val di: DI) :
     }
 
     private fun dismissClipboardSuggestion() {
+        if (shownSmsCode != null) {
+            // A code that was used or dismissed is not offered again.
+            SmsCodeStore.clear(context)
+            shownSmsCode = null
+        }
         clipboardTimeoutJob?.cancel()
         clipboardTimeoutJob = null
         isClipboardFresh = false
@@ -273,6 +322,7 @@ class InputBarDelegate(override val di: DI) :
 
             evalAlwaysUiState()
             ClipboardHelper.addOnUpdateListener(onClipboardUpdateListener)
+            SmsCodeStore.addListener(onSmsCodeListener)
             syncToolbarOptionStates()
         }
     }
@@ -294,6 +344,9 @@ class InputBarDelegate(override val di: DI) :
     }
 
     override fun onStartInput(info: EditorInfo) {
+        askSmsPermissionOnce()
+        // A code that arrived while the keyboard was away is offered as soon as it opens.
+        SmsCodeStore.fresh(context)?.let { if (it.receivedAt != shownSmsAt) showSmsCode(it) }
         evalAlwaysUiState()
     }
 
