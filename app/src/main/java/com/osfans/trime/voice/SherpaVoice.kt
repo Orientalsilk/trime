@@ -27,11 +27,13 @@ import com.k2fsa.sherpa.onnx.OnlineModelConfig
 import com.k2fsa.sherpa.onnx.OnlineParaformerModelConfig
 import com.k2fsa.sherpa.onnx.OnlineRecognizer
 import com.k2fsa.sherpa.onnx.OnlineRecognizerConfig
+import com.k2fsa.sherpa.onnx.OnlineStream
 import com.osfans.trime.ime.core.TrimeInputMethodService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 import timber.log.Timber
@@ -120,6 +122,23 @@ object SherpaVoice {
 
     private fun preview(held: String): String = if (held.isEmpty() && indicatorCount.get() == 0) "🎙 请说话…" else held
 
+    private fun getPunctuation(dir: File): OfflinePunctuation? = synchronized(this) {
+        punctuation ?: File(dir, PUNCT)
+            .takeIf { it.exists() && it.length() > 0 }
+            ?.let {
+                OfflinePunctuation(
+                    config =
+                    OfflinePunctuationConfig(
+                        model =
+                        OfflinePunctuationModelConfig(
+                            ctTransformer = it.absolutePath,
+                            numThreads = 2,
+                        ),
+                    ),
+                )
+            }?.also { punctuation = it }
+    }
+
     /** Add punctuation to a finished utterance; falls back to the raw text if the model is missing. */
     private fun punctuate(
         dir: File,
@@ -127,23 +146,7 @@ object SherpaVoice {
     ): String {
         if (text.isBlank()) return text
         return runCatching {
-            val p =
-                synchronized(this) {
-                    punctuation ?: File(dir, PUNCT)
-                        .takeIf { it.exists() && it.length() > 0 }
-                        ?.let {
-                            OfflinePunctuation(
-                                config =
-                                OfflinePunctuationConfig(
-                                    model =
-                                    OfflinePunctuationModelConfig(
-                                        ctTransformer = it.absolutePath,
-                                        numThreads = 2,
-                                    ),
-                                ),
-                            )
-                        }?.also { punctuation = it }
-                }
+            val p = getPunctuation(dir)
             p?.addPunctuation(text)?.trim()?.ifBlank { null } ?: text
         }.getOrElse {
             Timber.e(it, "punctuation failed")
@@ -197,6 +200,57 @@ object SherpaVoice {
 
     val isListening: Boolean
         get() = listenJob?.isActive == true
+
+    private val installLock = Any()
+    private val warming = AtomicBoolean(false)
+
+    /** Unpacks the bundled model on first use; safe to call from several threads at once. */
+    private fun ensureInstalled(
+        context: Context,
+        dir: File,
+    ): Boolean = synchronized(installLock) {
+        if (!modelReady(dir) && hasBundledModel(context)) installBundledModel(context, dir)
+        ensurePunctuationInstalled(context, dir)
+        modelReady(dir)
+    }
+
+    /**
+     * Gets the model ready in the background (unpack on first run, then load it into memory) so that
+     * pressing the voice key can start listening at once. Cheap when everything is already loaded.
+     * The model is still dropped after [IDLE_RELEASE_MS] without use, or under memory pressure.
+     */
+    fun warmUp(context: Context) {
+        if (!nativeOk || isListening || sessionStarting.get()) return
+        if (recognizer != null && punctuation != null) {
+            mainHandler.removeCallbacks(releaseIdle)
+            mainHandler.postDelayed(releaseIdle, IDLE_RELEASE_MS)
+            return
+        }
+        if (!warming.compareAndSet(false, true)) return
+        val app = context.applicationContext
+        mainHandler.removeCallbacks(releaseIdle)
+        scope.launch(Dispatchers.IO) {
+            try {
+                val dir = modelDir(app)
+                if (ensureInstalled(app, dir)) {
+                    getRecognizer(dir)
+                    getPunctuation(dir)
+                }
+            } catch (e: Throwable) {
+                Timber.w(e, "voice warm-up failed")
+            } finally {
+                warming.set(false)
+                if (!isListening && !sessionStarting.get()) {
+                    mainHandler.postDelayed(releaseIdle, IDLE_RELEASE_MS)
+                }
+            }
+        }
+    }
+
+    /** Called when the system is short of memory: the model is large, so give it back. */
+    fun onTrimMemory() {
+        mainHandler.post(releaseIdle)
+    }
 
     // Set by the key that is being held, consumed by the next toggle(): the session then runs
     // until the key is released instead of stopping after a pause.
@@ -281,11 +335,8 @@ object SherpaVoice {
             scope.launch(Dispatchers.IO) {
                 try {
                     runCatching {
-                        if (!modelReady(dir)) {
-                            toast(context, "首次使用，正在解压语音模型…")
-                            installBundledModel(context, dir)
-                        }
-                        ensurePunctuationInstalled(context, dir)
+                        if (!modelReady(dir)) toast(context, "首次使用，正在解压语音模型…")
+                        ensureInstalled(context, dir)
                         runSession(service, dir)
                     }.onFailure {
                         Timber.e(it, "voice session failed")
@@ -391,9 +442,9 @@ object SherpaVoice {
         dir: File,
     ) {
         val context = service.applicationContext
-        toast(context, STATUS_LOADING)
-        val rec = getRecognizer(dir)
-        val stream = rec.createStream()
+        // Already loaded when warmUp() ran in time; otherwise it loads while the microphone is open.
+        val loading = scope.async { getRecognizer(dir) }
+        var createdStream: OnlineStream? = null
         var record: AudioRecord? = null
         var recordingStarted = false
         try {
@@ -422,6 +473,13 @@ object SherpaVoice {
             }
 
             val buffer = ShortArray(SAMPLE_RATE / 10)
+            val updateLevel = { samples: FloatArray, n: Int ->
+                var sum = 0f
+                for (x in samples) sum += x * x
+                val rms = kotlin.math.sqrt(sum / n)
+                val target = (rms * 7f).coerceIn(0f, 1f)
+                level = if (target > level) target else level * 0.75f + target * 0.25f
+            }
             var lastShown = ""
             var lastCommitted = ""
             var held = ""
@@ -437,6 +495,26 @@ object SherpaVoice {
             setPhase(Phase.LISTENING)
             // Prefer in-field hint over a second toast so the keyboard feels quieter.
             showComposing(service, preview(held))
+
+            // Keep what is said while the model is still loading, so no words are lost.
+            val pending = ArrayList<FloatArray>()
+            if (!loading.isCompleted) toast(context, STATUS_LOADING)
+            while (!loading.isCompleted && currentCoroutineContext()[Job]?.isActive != false) {
+                val n = audioRecord.read(buffer, 0, buffer.size)
+                if (n < 0) error("microphone read failed: $n")
+                if (n == 0) continue
+                val samples = FloatArray(n) { buffer[it] / 32768f }
+                updateLevel(samples, n)
+                pending.add(samples)
+            }
+            val rec = loading.await()
+            val stream = rec.createStream().also { createdStream = it }
+            for (chunk in pending) stream.acceptWaveform(chunk, SAMPLE_RATE)
+            pending.clear()
+            while (rec.isReady(stream)) {
+                rec.decode(stream)
+            }
+            lastActivityAt = SystemClock.elapsedRealtime()
 
             while (
                 currentCoroutineContext()[Job]?.isActive != false &&
@@ -462,13 +540,7 @@ object SherpaVoice {
                 if (n == 0) continue
 
                 val samples = FloatArray(n) { buffer[it] / 32768f }
-                run {
-                    var sum = 0f
-                    for (x in samples) sum += x * x
-                    val rms = kotlin.math.sqrt(sum / n)
-                    val target = (rms * 7f).coerceIn(0f, 1f)
-                    level = if (target > level) target else level * 0.75f + target * 0.25f
-                }
+                updateLevel(samples, n)
                 stream.acceptWaveform(samples, SAMPLE_RATE)
                 while (rec.isReady(stream)) {
                     rec.decode(stream)
@@ -557,7 +629,7 @@ object SherpaVoice {
                 }
                 runCatching { it.release() }
             }
-            runCatching { stream.release() }
+            runCatching { createdStream?.release() }
         }
     }
 

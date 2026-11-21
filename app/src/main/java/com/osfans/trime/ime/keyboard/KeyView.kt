@@ -114,6 +114,7 @@ class KeyView(
         hasPopup = key.popup.isNotEmpty()
 
         onPress = {
+            if (isVoiceKey) SherpaVoice.warmUp(service.applicationContext)
             if (keyboard.firstPressedKeyIndex == -1) keyboard.firstPressedKeyIndex = id
             setPressedState(true)
             key.getCode(KeyBehavior.CLICK).let { keyboardActionListener.onPress(it) }
@@ -292,6 +293,8 @@ class KeyView(
             SherpaVoice.addStateListener(voiceStateListener)
             SherpaVoice.indicatorAttached(true)
             voiceIndicatorRegistered = true
+            // The keyboard just appeared: have the model loaded by the time the key is pressed.
+            SherpaVoice.warmUp(service.applicationContext)
         }
     }
 

@@ -378,6 +378,8 @@ open class TrimeInputMethodService : LifecycleInputMethodService() {
         // Built keyboards are rebuildable at any time, so any memory pressure is a good
         // moment to drop the ones that are not currently shown.
         inputView?.trimMemory()
+        // The offline voice model is hundreds of MB; reload it later rather than hold it under pressure.
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) com.osfans.trime.voice.SherpaVoice.onTrimMemory()
     }
 
     override fun onDestroy() {
