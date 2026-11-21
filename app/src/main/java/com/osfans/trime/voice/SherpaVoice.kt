@@ -264,6 +264,10 @@ object SherpaVoice {
         holdNext = true
     }
 
+    /** True while (and just after) a hold-to-talk session, so the UI can show it where the finger is not. */
+    val isHoldSession: Boolean
+        get() = holdMode
+
     /**
      * @return false if sherpa-onnx is unavailable, so the caller can fall back to another voice input.
      */

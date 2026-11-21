@@ -328,7 +328,7 @@ class KeyView(
 
         drawBackground(canvas, key)
 
-        val voiceActive = isVoiceKey && SherpaVoice.phase != SherpaVoice.Phase.IDLE
+        val voiceActive = isVoiceKey && !voiceHolding && SherpaVoice.phase != SherpaVoice.Phase.IDLE
         if (!voiceActive) {
             val label = key.getLabel().let {
                 if (it == "enter_labels") keyboardView.labelEnter else it
@@ -359,7 +359,7 @@ class KeyView(
      */
     private fun drawVoiceListeningIndicator(canvas: Canvas) {
         val state = SherpaVoice.phase
-        if (!isVoiceKey || state == SherpaVoice.Phase.IDLE) return
+        if (!isVoiceKey || voiceHolding || state == SherpaVoice.Phase.IDLE) return
 
         val now = android.os.SystemClock.uptimeMillis()
         val t = (now % 1_600L) / 1_600f

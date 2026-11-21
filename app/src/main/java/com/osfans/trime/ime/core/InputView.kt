@@ -25,6 +25,7 @@ import com.osfans.trime.data.prefs.AppPrefs
 import com.osfans.trime.data.theme.Theme
 import com.osfans.trime.data.theme.ThemeScope
 import com.osfans.trime.ime.bar.InputBarDelegate
+import com.osfans.trime.ime.bar.ui.VoiceBarOverlay
 import com.osfans.trime.ime.broadcast.EnterKeyDisplayDelegate
 import com.osfans.trime.ime.broadcast.InputBroadcastReceiver
 import com.osfans.trime.ime.broadcast.InputBroadcaster
@@ -79,6 +80,7 @@ class InputView(
         imageView {
             scaleType = ImageView.ScaleType.CENTER_CROP
         }
+    private val voiceOverlay = VoiceBarOverlay(service)
     private val placeholderListener = OnClickListener { }
 
     private val leftPaddingSpace =
@@ -212,6 +214,14 @@ class InputView(
                 )
                 add(
                     inputBar.view,
+                    lParams(matchParent, dp(inputBar.themedHeight)) {
+                        topOfParent()
+                        centerHorizontally()
+                    },
+                )
+                // Drawn over the bar while the space bar is held, because the finger hides the key itself.
+                add(
+                    voiceOverlay,
                     lParams(matchParent, dp(inputBar.themedHeight)) {
                         topOfParent()
                         centerHorizontally()
