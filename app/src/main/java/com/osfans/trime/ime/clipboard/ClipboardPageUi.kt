@@ -78,7 +78,7 @@ class ClipboardPageUi(override val ctx: Context) : Ui {
                     setPaddingDp(10, 6, 10, 6)
                     setOnClickListener { onSelect(key) }
                 }
-            categoryRow.add(chip, lParams(wrapContent, wrapContent))
+            categoryRow.apply { add(chip, lParams(wrapContent, wrapContent)) }
         }
     }
 

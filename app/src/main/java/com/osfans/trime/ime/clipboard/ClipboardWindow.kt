@@ -334,7 +334,7 @@ class ClipboardWindow(di: DI, private val initialTab: Int = 0) : BoardWindow.Bar
                     categories = cats,
                     selected = selectedClipboardCategory.value,
                     textColor = scope.colors.keyTextColor,
-                    highlightColor = scope.colors.hilitedCandidateTextColor,
+                    highlightColor = scope.colors.hilitedCandidateBackColor,
                 ) { selectedClipboardCategory.value = it }
             }
         }
@@ -350,7 +350,7 @@ class ClipboardWindow(di: DI, private val initialTab: Int = 0) : BoardWindow.Bar
                     categories = cats,
                     selected = selectedFavoriteCategory.value,
                     textColor = scope.colors.keyTextColor,
-                    highlightColor = scope.colors.hilitedCandidateTextColor,
+                    highlightColor = scope.colors.hilitedCandidateBackColor,
                 ) { selectedFavoriteCategory.value = it }
             }
         }
@@ -375,13 +375,13 @@ class ClipboardWindow(di: DI, private val initialTab: Int = 0) : BoardWindow.Bar
             categories = currentClipboardCategories,
             selected = selectedClipboardCategory.value,
             textColor = scope.colors.keyTextColor,
-            highlightColor = scope.colors.hilitedCandidateTextColor,
+            highlightColor = scope.colors.hilitedCandidateBackColor,
         ) { selectedClipboardCategory.value = it }
         favoritePage.setCategories(
             categories = currentFavoriteCategories,
             selected = selectedFavoriteCategory.value,
             textColor = scope.colors.keyTextColor,
-            highlightColor = scope.colors.hilitedCandidateTextColor,
+            highlightColor = scope.colors.hilitedCandidateBackColor,
         ) { selectedFavoriteCategory.value = it }
         clipboardEntitiesAdapter.refreshColors()
         favoriteEntitiesAdapter.refreshColors()

@@ -27,7 +27,6 @@ import splitties.views.dsl.core.Ui
 import splitties.views.dsl.core.add
 import splitties.views.dsl.core.imageView
 import splitties.views.dsl.core.lParams
-import splitties.views.dsl.core.matchConstraints
 import splitties.views.dsl.core.matchParent
 import splitties.views.dsl.core.textView
 import splitties.views.dsl.core.verticalLayout
@@ -101,7 +100,7 @@ class ClipboardEntityUi(
             )
             add(
                 contentColumn,
-                lParams(matchConstraints, wrapContent) {
+                lParams(0, wrapContent) {
                     startOfParent()
                     before(dragHandle)
                     centerVertically()
