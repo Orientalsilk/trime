@@ -9,8 +9,6 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Typeface
 import android.view.View
-import android.widget.EditText
-import android.widget.LinearLayout
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
@@ -37,7 +35,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.kodein.di.DI
 import org.kodein.di.instance
-import splitties.dimensions.dp
 import splitties.views.recyclerview.verticalLayoutManager
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -91,9 +88,7 @@ class ClipboardWindow(di: DI, private val initialTab: Int = 0) : BoardWindow.Bar
             }
 
             override fun onEditMeta(item: ClipboardItem) {
-                showEditMetaDialog(item, currentClipboardCategories) { category, note ->
-                    ClipboardHelper.updateMeta(item.id, category, note)
-                }
+                onEdit(item.id)
             }
 
             override fun onReorder(updates: List<Pair<Int, Long>>) {
@@ -138,9 +133,7 @@ class ClipboardWindow(di: DI, private val initialTab: Int = 0) : BoardWindow.Bar
             }
 
             override fun onEditMeta(item: ClipboardItem) {
-                showEditMetaDialog(item, currentFavoriteCategories) { category, note ->
-                    FavoriteHelper.updateMeta(item.id, category, note)
-                }
+                onEdit(item.id)
             }
 
             override fun onReorder(updates: List<Pair<Int, Long>>) {
@@ -216,52 +209,6 @@ class ClipboardWindow(di: DI, private val initialTab: Int = 0) : BoardWindow.Bar
                 }
             }
         }
-    }
-
-    private fun showEditMetaDialog(
-        item: ClipboardItem,
-        existingCategories: List<String>,
-        onSave: suspend (String, String) -> Unit,
-    ) {
-        val pad = context.dp(16)
-        val container =
-            LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
-                setPadding(pad, pad / 2, pad, 0)
-            }
-        val categoryInput =
-            EditText(context).apply {
-                hint = if (existingCategories.isNotEmpty()) {
-                    "分类（已有：${existingCategories.joinToString("、")}）"
-                } else {
-                    "分类（可选）"
-                }
-                setText(item.category)
-                setSingleLine()
-            }
-        val noteInput =
-            EditText(context).apply {
-                hint = "备注（可选）"
-                setText(item.note)
-                setSingleLine()
-            }
-        container.addView(categoryInput)
-        container.addView(noteInput)
-
-        val dialog =
-            AlertDialog.Builder(context)
-                .setTitle("备注与分类")
-                .setView(container)
-                .setPositiveButton(R.string.ok) { _, _ ->
-                    val cat = categoryInput.text.toString()
-                    val note = noteInput.text.toString()
-                    service.lifecycleScope.launch {
-                        onSave(cat, note)
-                    }
-                }
-                .setNegativeButton(R.string.cancel, null)
-                .create()
-        service.showDialog(dialog)
     }
 
     private fun launchTextSharing(text: String) {

@@ -268,7 +268,8 @@ class KeyboardWindow(di: DI) :
 
                 else -> {
                     id.ifEmpty {
-                        if (activeKeyboard?.isLock == true) currentKeyboardId else lastLockKeyboardId
+                        val candidate = if (activeKeyboard?.isLock == true) currentKeyboardId else lastLockKeyboardId
+                        if (candidate == "default" || candidate.isEmpty()) smartMatchKeyboard() else candidate
                     }
                 }
             }
@@ -451,6 +452,12 @@ class KeyboardWindow(di: DI) :
     }
 
     override fun onAttached() {
+        if (currentKeyboardId == "default") {
+            val matched = smartMatchKeyboard()
+            if (matched != currentKeyboardId) {
+                switchKeyboard(matched)
+            }
+        }
     }
 
     override fun onDetached() {

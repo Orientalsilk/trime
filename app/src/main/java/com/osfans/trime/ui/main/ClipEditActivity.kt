@@ -9,8 +9,8 @@ import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
 import android.view.Gravity
-import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
+import android.widget.LinearLayout
 import com.osfans.trime.data.clip.ClipboardHelper
 import com.osfans.trime.data.clip.FavoriteHelper
 import com.osfans.trime.databinding.ActivityClipEditBinding
@@ -18,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import splitties.dimensions.dp
 import splitties.systemservices.inputMethodManager
 import timber.log.Timber
 
@@ -25,6 +26,8 @@ class ClipEditActivity : Activity() {
     private val scope: CoroutineScope = MainScope()
     private var entityId: Int = -1
     private lateinit var editText: EditText
+    private lateinit var categoryInput: EditText
+    private lateinit var noteInput: EditText
     private var clipType: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -36,29 +39,68 @@ class ClipEditActivity : Activity() {
                 clipEditCancel.setOnClickListener { finish() }
                 clipEditOk.setOnClickListener { finishEditing() }
             }
-        setContentView(binding.root)
+        val pad = dp(12)
+        categoryInput =
+            EditText(this).apply {
+                hint = "分类（可选）"
+                setSingleLine()
+            }
+        noteInput =
+            EditText(this).apply {
+                hint = "备注（可选）"
+                setSingleLine()
+            }
+        val rootLayout =
+            LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                val metaRow =
+                    LinearLayout(this@ClipEditActivity).apply {
+                        orientation = LinearLayout.VERTICAL
+                        setPadding(pad, pad / 2, pad, 0)
+                        addView(categoryInput)
+                        addView(noteInput)
+                    }
+                addView(metaRow)
+                addView(binding.root)
+            }
+        setContentView(rootLayout)
+        editText.requestFocus()
         inputMethodManager.showSoftInput(editText, 0)
         processIntent(intent)
     }
 
     private fun finishEditing() {
         val str = editText.editableText.toString()
+        val category = categoryInput.text.toString()
+        val note = noteInput.text.toString()
         scope.launch {
             when (clipType) {
-                FROM_CLIPBOARD -> ClipboardHelper.updateText(entityId, str)
-                FROM_COLLECTION -> FavoriteHelper.updateText(entityId, str)
+                FROM_CLIPBOARD -> {
+                    ClipboardHelper.updateText(entityId, str)
+                    ClipboardHelper.updateMeta(entityId, category, note)
+                }
+
+                FROM_COLLECTION -> {
+                    FavoriteHelper.updateText(entityId, str)
+                    FavoriteHelper.updateMeta(entityId, category, note)
+                }
+
                 else -> {}
             }
+            finish()
         }
-        finish()
     }
 
     private fun setEntity(
         id: Int,
         text: String,
+        category: String,
+        note: String,
     ) {
         entityId = id
         editText.setText(text)
+        categoryInput.setText(category)
+        noteInput.setText(note)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -76,13 +118,13 @@ class ClipEditActivity : Activity() {
                     FROM_CLIPBOARD ->
                         ClipboardHelper.get(entityId)?.let {
                             this@ClipEditActivity.clipType = clipType
-                            setEntity(it.id, it.text)
+                            setEntity(it.id, it.text, it.category, it.note)
                         }
 
                     FROM_COLLECTION ->
                         FavoriteHelper.get(entityId)?.let {
                             this@ClipEditActivity.clipType = clipType
-                            setEntity(it.id, it.text)
+                            setEntity(it.id, it.text, it.category, it.note)
                         }
                 }
             }
