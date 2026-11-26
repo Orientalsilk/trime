@@ -8,7 +8,9 @@ package com.osfans.trime.data.clip
 import android.content.Context
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import androidx.room.withTransaction
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -29,6 +31,24 @@ object FavoriteHelper : CoroutineScope by CoroutineScope(SupervisorJob() + Dispa
     suspend fun get(id: Int) = dao.get(id)
 
     fun allEntities() = dao.all()
+
+    fun allEntitiesFlow(category: String = ""): Flow<List<FavoriteEntity>> = dao.allFlow(category)
+
+    fun categoriesFlow(): Flow<List<String>> = dao.categoriesFlow()
+
+    suspend fun updateMeta(
+        id: Int,
+        category: String,
+        note: String,
+    ) {
+        dao.updateMeta(id, category.trim(), note.trim())
+    }
+
+    suspend fun updateSortOrders(updates: List<Pair<Int, Long>>) {
+        database.withTransaction {
+            updates.forEach { (id, order) -> dao.updateSortOrder(id, order) }
+        }
+    }
 
     suspend fun delete(id: Int) = dao.delete(id)
 
@@ -58,8 +78,11 @@ object FavoriteHelper : CoroutineScope by CoroutineScope(SupervisorJob() + Dispa
                 val timestamp = System.currentTimeMillis()
                 try {
                     dao.find(text)?.let {
-                        lastEntity = it.copy(timestamp = timestamp)
-                        dao.updateTimestamp(it.id, timestamp)
+                        lastEntity = it.copy(timestamp = timestamp, sortOrder = timestamp)
+                        database.withTransaction {
+                            dao.updateTimestamp(it.id, timestamp)
+                            dao.updateSortOrder(it.id, timestamp)
+                        }
                         return@withLock
                     }
                     val entity = FavoriteEntity(text = text)

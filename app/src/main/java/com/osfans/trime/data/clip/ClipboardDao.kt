@@ -10,6 +10,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ClipboardDao {
@@ -46,8 +47,33 @@ interface ClipboardDao {
     @Query("DELETE FROM ${ClipboardEntity.TABLE_NAME} WHERE timestamp<:timestamp AND pinned=0")
     suspend fun deleteUnpinnedEarlierThan(timestamp: Long)
 
-    @Query("SELECT * FROM ${ClipboardEntity.TABLE_NAME} ORDER BY pinned DESC, timestamp DESC")
+    @Query("SELECT * FROM ${ClipboardEntity.TABLE_NAME} ORDER BY pinned DESC, sort_order DESC, timestamp DESC")
     fun all(): PagingSource<Int, ClipboardEntity>
+
+    @Query(
+        """
+        SELECT * FROM ${ClipboardEntity.TABLE_NAME}
+        WHERE (:category = '' OR category = :category)
+        ORDER BY pinned DESC, sort_order DESC, timestamp DESC
+        """,
+    )
+    fun allFlow(category: String = ""): Flow<List<ClipboardEntity>>
+
+    @Query("SELECT DISTINCT category FROM ${ClipboardEntity.TABLE_NAME} WHERE category != '' ORDER BY category ASC")
+    fun categoriesFlow(): Flow<List<String>>
+
+    @Query("UPDATE ${ClipboardEntity.TABLE_NAME} SET category=:category, note=:note WHERE id=:id")
+    suspend fun updateMeta(
+        id: Int,
+        category: String,
+        note: String,
+    )
+
+    @Query("UPDATE ${ClipboardEntity.TABLE_NAME} SET sort_order=:sortOrder WHERE id=:id")
+    suspend fun updateSortOrder(
+        id: Int,
+        sortOrder: Long,
+    )
 
     @Query("SELECT * FROM ${ClipboardEntity.TABLE_NAME} WHERE id=:id LIMIT 1")
     suspend fun get(id: Int): ClipboardEntity?

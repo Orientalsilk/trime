@@ -27,6 +27,7 @@ internal object ClipDatabaseHolder {
             val database =
                 Room
                     .databaseBuilder(context, ClipDatabase::class.java, DATABASE_NAME)
+                    .addMigrations(ClipDatabase.MIGRATION_1_2)
                     .build()
             // Old databases only exist during the first launch after the upgrade;
             // afterwards they are renamed and this becomes a cheap pair of file checks.

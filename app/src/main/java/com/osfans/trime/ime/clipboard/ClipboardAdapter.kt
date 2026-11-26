@@ -5,11 +5,13 @@
 
 package com.osfans.trime.ime.clipboard
 
+import android.annotation.SuppressLint
 import android.os.Build
+import android.view.MotionEvent
 import android.view.ViewGroup
 import android.widget.PopupMenu
-import androidx.paging.PagingDataAdapter
 import androidx.recyclerview.widget.DiffUtil
+import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.osfans.trime.R
 import com.osfans.trime.data.clip.ClipboardEntity
@@ -17,13 +19,16 @@ import com.osfans.trime.data.theme.ThemeScope
 import com.osfans.trime.util.DeviceUtils
 import com.osfans.trime.util.item
 import splitties.resources.styledColor
+import java.util.Collections
 import kotlin.math.min
 
 abstract class ClipboardAdapter(
     private val scope: ThemeScope,
     private val maskSensitive: Boolean,
-) : PagingDataAdapter<ClipboardItem, ClipboardAdapter.ViewHolder>(diffCallback) {
+) : ListAdapter<ClipboardItem, ClipboardAdapter.ViewHolder>(diffCallback) {
     companion object {
+        private const val MENU_EDIT_META = 1001
+
         private val diffCallback =
             object : DiffUtil.ItemCallback<ClipboardItem>() {
                 override fun areItemsTheSame(
@@ -71,6 +76,7 @@ abstract class ClipboardAdapter(
     }
 
     private var popupMenu: PopupMenu? = null
+    private var dragItems: MutableList<ClipboardItem>? = null
 
     class ViewHolder(
         val ui: ClipboardEntityUi,
@@ -81,14 +87,28 @@ abstract class ClipboardAdapter(
         viewType: Int,
     ): ViewHolder = ViewHolder(ClipboardEntityUi(parent.context, scope))
 
+    @SuppressLint("ClickableViewAccessibility")
     override fun onBindViewHolder(
         holder: ViewHolder,
         position: Int,
     ) {
-        val item = getItem(position) ?: return
+        val item = getItem(position)
         with(holder.ui) {
             refreshColors()
-            setEntity(excerptText(item.text, item.mask && maskSensitive), item.pinned)
+            setEntity(
+                text = excerptText(item.text, item.mask && maskSensitive),
+                pinned = item.pinned,
+                category = item.category,
+                note = item.note,
+            )
+            dragHandle.setOnTouchListener { _, event ->
+                if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                    onStartDrag(holder)
+                    true
+                } else {
+                    false
+                }
+            }
             root.setOnClickListener {
                 onPaste(item)
             }
@@ -98,6 +118,14 @@ abstract class ClipboardAdapter(
                 val iconTint = ctx.styledColor(android.R.attr.colorControlNormal)
                 menu.item(R.string.edit, R.drawable.ic_baseline_edit_24, iconTint) {
                     onEdit(item.id)
+                }
+                menu.add(0, MENU_EDIT_META, 0, "备注 / 分类").apply {
+                    setIcon(R.drawable.ic_baseline_edit_24)
+                    icon?.setTint(iconTint)
+                    setOnMenuItemClickListener {
+                        onEditMeta(item)
+                        true
+                    }
                 }
                 menu.item(R.string.share, R.drawable.ic_baseline_share_24, iconTint) {
                     onShare(item)
@@ -140,6 +168,31 @@ abstract class ClipboardAdapter(
         }
     }
 
+    fun onDragStart() {
+        dragItems = currentList.toMutableList()
+    }
+
+    fun onDragMove(
+        from: Int,
+        to: Int,
+    ): Boolean {
+        val list = dragItems ?: return false
+        val fromItem = list.getOrNull(from) ?: return false
+        val toItem = list.getOrNull(to) ?: return false
+        if (fromItem.pinned != toItem.pinned) return false
+        Collections.swap(list, from, to)
+        notifyItemMoved(from, to)
+        return true
+    }
+
+    fun onDragEnd() {
+        val list = dragItems ?: return
+        dragItems = null
+        val base = System.currentTimeMillis() * 1000L
+        val updates = list.mapIndexed { index, item -> item.id to (base - index * 1000L) }
+        onReorder(updates)
+    }
+
     abstract fun onPaste(item: ClipboardItem)
 
     open fun onPin(id: Int) {}
@@ -147,6 +200,12 @@ abstract class ClipboardAdapter(
     open fun onUnpin(id: Int) {}
 
     abstract fun onEdit(id: Int)
+
+    abstract fun onEditMeta(item: ClipboardItem)
+
+    abstract fun onReorder(updates: List<Pair<Int, Long>>)
+
+    abstract fun onStartDrag(holder: RecyclerView.ViewHolder)
 
     abstract fun onShare(item: ClipboardItem)
 
@@ -164,6 +223,7 @@ abstract class ClipboardAdapter(
     }
 
     /** Re-colors the visible rows after a scheme switch; rows re-apply colors on bind. */
+    @SuppressLint("NotifyDataSetChanged")
     fun refreshColors() {
         notifyDataSetChanged()
     }

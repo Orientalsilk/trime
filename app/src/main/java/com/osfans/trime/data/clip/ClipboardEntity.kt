@@ -25,6 +25,12 @@ data class ClipboardEntity(
     val type: String = ClipDescription.MIMETYPE_TEXT_PLAIN,
     @ColumnInfo(defaultValue = "0")
     val sensitive: Boolean = false,
+    @ColumnInfo(defaultValue = "")
+    val category: String = "",
+    @ColumnInfo(defaultValue = "")
+    val note: String = "",
+    @ColumnInfo(name = "sort_order", defaultValue = "0")
+    val sortOrder: Long = timestamp,
 ) {
     companion object {
         const val BULLET = "•"

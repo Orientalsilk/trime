@@ -16,6 +16,12 @@ data class FavoriteEntity(
     val text: String,
     @ColumnInfo(defaultValue = "-1")
     val timestamp: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "")
+    val category: String = "",
+    @ColumnInfo(defaultValue = "")
+    val note: String = "",
+    @ColumnInfo(name = "sort_order", defaultValue = "0")
+    val sortOrder: Long = timestamp,
 ) {
     companion object {
         const val TABLE_NAME = "favorite"

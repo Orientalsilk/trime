@@ -17,8 +17,29 @@ data class ClipboardItem(
     val text: String,
     val pinned: Boolean,
     val mask: Boolean,
+    val category: String = "",
+    val note: String = "",
+    val sortOrder: Long = 0L,
 )
 
-fun ClipboardEntity.toClipboardItem() = ClipboardItem(id = id, text = text, pinned = pinned, mask = sensitive)
+fun ClipboardEntity.toClipboardItem() =
+    ClipboardItem(
+        id = id,
+        text = text,
+        pinned = pinned,
+        mask = sensitive,
+        category = category,
+        note = note,
+        sortOrder = sortOrder,
+    )
 
-fun FavoriteEntity.toClipboardItem() = ClipboardItem(id = id, text = text, pinned = false, mask = false)
+fun FavoriteEntity.toClipboardItem() =
+    ClipboardItem(
+        id = id,
+        text = text,
+        pinned = false,
+        mask = false,
+        category = category,
+        note = note,
+        sortOrder = sortOrder,
+    )

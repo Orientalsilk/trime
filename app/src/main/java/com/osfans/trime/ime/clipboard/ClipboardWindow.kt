@@ -9,10 +9,11 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.graphics.Typeface
 import android.view.View
+import android.widget.EditText
+import android.widget.LinearLayout
 import androidx.lifecycle.lifecycleScope
-import androidx.paging.Pager
-import androidx.paging.PagingConfig
-import androidx.paging.map
+import androidx.recyclerview.widget.ItemTouchHelper
+import androidx.recyclerview.widget.RecyclerView
 import com.osfans.trime.R
 import com.osfans.trime.data.clip.ClipboardHelper
 import com.osfans.trime.data.clip.FavoriteHelper
@@ -27,13 +28,19 @@ import com.osfans.trime.ime.window.BoardWindow
 import com.osfans.trime.ime.window.BoardWindowManager
 import com.osfans.trime.ui.main.ClipEditActivity
 import com.osfans.trime.util.AppUtils
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.kodein.di.DI
 import org.kodein.di.instance
+import splitties.dimensions.dp
 import splitties.views.recyclerview.verticalLayoutManager
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class ClipboardWindow(di: DI, private val initialTab: Int = 0) : BoardWindow.BarBoardWindow(di) {
 
     private val service: TrimeInputMethodService by instance()
@@ -49,16 +56,20 @@ class ClipboardWindow(di: DI, private val initialTab: Int = 0) : BoardWindow.Bar
     private val clipboardReturnAfterPaste by prefs.clipboardReturnAfterPaste
     private val clipboardMaskSensitive by prefs.clipboardMaskSensitive
 
-    private val clipboardEntitiesPager by lazy {
-        Pager(PagingConfig(pageSize = 16)) { ClipboardHelper.allEntities() }
-    }
-    private val favoriteEntitiesPager by lazy {
-        Pager(PagingConfig(pageSize = 16)) { FavoriteHelper.allEntities() }
-    }
+    private val selectedClipboardCategory = MutableStateFlow("")
+    private val selectedFavoriteCategory = MutableStateFlow("")
+    private var currentClipboardCategories: List<String> = emptyList()
+    private var currentFavoriteCategories: List<String> = emptyList()
+
     private var clipboardEntitiesSubmitJob: Job? = null
     private var favoriteEntitiesSubmitJob: Job? = null
+    private var clipboardCategoriesJob: Job? = null
+    private var favoriteCategoriesJob: Job? = null
 
-    private val clipboardEntitiesAdapter by lazy {
+    private var clipboardTouchHelper: ItemTouchHelper? = null
+    private var favoriteTouchHelper: ItemTouchHelper? = null
+
+    private val clipboardEntitiesAdapter: ClipboardAdapter by lazy {
         object : ClipboardAdapter(scope, clipboardMaskSensitive) {
             override fun onPaste(item: ClipboardItem) {
                 service.commitText(item.text)
@@ -77,6 +88,20 @@ class ClipboardWindow(di: DI, private val initialTab: Int = 0) : BoardWindow.Bar
 
             override fun onEdit(id: Int) {
                 AppUtils.launchClipEdit(context, id, ClipEditActivity.FROM_CLIPBOARD)
+            }
+
+            override fun onEditMeta(item: ClipboardItem) {
+                showEditMetaDialog(item, currentClipboardCategories) { category, note ->
+                    ClipboardHelper.updateMeta(item.id, category, note)
+                }
+            }
+
+            override fun onReorder(updates: List<Pair<Int, Long>>) {
+                service.lifecycleScope.launch { ClipboardHelper.updateSortOrders(updates) }
+            }
+
+            override fun onStartDrag(holder: RecyclerView.ViewHolder) {
+                clipboardTouchHelper?.startDrag(holder)
             }
 
             override fun onShare(item: ClipboardItem) {
@@ -99,7 +124,7 @@ class ClipboardWindow(di: DI, private val initialTab: Int = 0) : BoardWindow.Bar
         }
     }
 
-    private val favoriteEntitiesAdapter by lazy {
+    private val favoriteEntitiesAdapter: ClipboardAdapter by lazy {
         object : ClipboardAdapter(scope, false) {
             override fun onPaste(item: ClipboardItem) {
                 service.commitText(item.text)
@@ -110,6 +135,20 @@ class ClipboardWindow(di: DI, private val initialTab: Int = 0) : BoardWindow.Bar
 
             override fun onEdit(id: Int) {
                 AppUtils.launchClipEdit(context, id, ClipEditActivity.FROM_COLLECTION)
+            }
+
+            override fun onEditMeta(item: ClipboardItem) {
+                showEditMetaDialog(item, currentFavoriteCategories) { category, note ->
+                    FavoriteHelper.updateMeta(item.id, category, note)
+                }
+            }
+
+            override fun onReorder(updates: List<Pair<Int, Long>>) {
+                service.lifecycleScope.launch { FavoriteHelper.updateSortOrders(updates) }
+            }
+
+            override fun onStartDrag(holder: RecyclerView.ViewHolder) {
+                favoriteTouchHelper?.startDrag(holder)
             }
 
             override fun onShare(item: ClipboardItem) {
@@ -134,6 +173,7 @@ class ClipboardWindow(di: DI, private val initialTab: Int = 0) : BoardWindow.Bar
                 layoutManager = verticalLayoutManager()
                 adapter = clipboardEntitiesAdapter
             }
+            clipboardTouchHelper = attachDragHelper(clipboardEntitiesAdapter)
         }
     }
 
@@ -143,6 +183,7 @@ class ClipboardWindow(di: DI, private val initialTab: Int = 0) : BoardWindow.Bar
                 layoutManager = verticalLayoutManager()
                 adapter = favoriteEntitiesAdapter
             }
+            favoriteTouchHelper = attachDragHelper(favoriteEntitiesAdapter)
         }
     }
 
@@ -175,6 +216,52 @@ class ClipboardWindow(di: DI, private val initialTab: Int = 0) : BoardWindow.Bar
                 }
             }
         }
+    }
+
+    private fun showEditMetaDialog(
+        item: ClipboardItem,
+        existingCategories: List<String>,
+        onSave: suspend (String, String) -> Unit,
+    ) {
+        val pad = context.dp(16)
+        val container =
+            LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(pad, pad / 2, pad, 0)
+            }
+        val categoryInput =
+            EditText(context).apply {
+                hint = if (existingCategories.isNotEmpty()) {
+                    "分类（已有：${existingCategories.joinToString("、")}）"
+                } else {
+                    "分类（可选）"
+                }
+                setText(item.category)
+                setSingleLine()
+            }
+        val noteInput =
+            EditText(context).apply {
+                hint = "备注（可选）"
+                setText(item.note)
+                setSingleLine()
+            }
+        container.addView(categoryInput)
+        container.addView(noteInput)
+
+        val dialog =
+            AlertDialog.Builder(context)
+                .setTitle("备注与分类")
+                .setView(container)
+                .setPositiveButton(R.string.ok) { _, _ ->
+                    val cat = categoryInput.text.toString()
+                    val note = noteInput.text.toString()
+                    service.lifecycleScope.launch {
+                        onSave(cat, note)
+                    }
+                }
+                .setNegativeButton(R.string.cancel, null)
+                .create()
+        service.showDialog(dialog)
     }
 
     private fun launchTextSharing(text: String) {
@@ -222,18 +309,50 @@ class ClipboardWindow(di: DI, private val initialTab: Int = 0) : BoardWindow.Bar
         wasAttached = true
         clipboardLayout.viewPager.setCurrentItem(initialTab, false)
         clipboardEntitiesSubmitJob = service.lifecycleScope.launch {
-            clipboardEntitiesPager.flow
-                .map { pagingData -> pagingData.map { it.toClipboardItem() } }
-                .collect {
-                    clipboardEntitiesAdapter.submitData(it)
+            selectedClipboardCategory
+                .flatMapLatest { cat ->
+                    ClipboardHelper.allEntitiesFlow(cat).map { list -> list.map { it.toClipboardItem() } }
                 }
+                .collect { clipboardEntitiesAdapter.submitList(it) }
         }
         favoriteEntitiesSubmitJob = service.lifecycleScope.launch {
-            favoriteEntitiesPager.flow
-                .map { pagingData -> pagingData.map { it.toClipboardItem() } }
-                .collect {
-                    favoriteEntitiesAdapter.submitData(it)
+            selectedFavoriteCategory
+                .flatMapLatest { cat ->
+                    FavoriteHelper.allEntitiesFlow(cat).map { list -> list.map { it.toClipboardItem() } }
                 }
+                .collect { favoriteEntitiesAdapter.submitList(it) }
+        }
+        clipboardCategoriesJob = service.lifecycleScope.launch {
+            combine(ClipboardHelper.categoriesFlow(), selectedClipboardCategory) { cats, sel ->
+                cats to sel
+            }.collect { (cats, sel) ->
+                currentClipboardCategories = cats
+                if (sel.isNotEmpty() && sel !in cats) {
+                    selectedClipboardCategory.value = ""
+                }
+                clipboardPage.setCategories(
+                    categories = cats,
+                    selected = selectedClipboardCategory.value,
+                    textColor = scope.colors.keyTextColor,
+                    highlightColor = scope.colors.hilitedCandidateTextColor,
+                ) { selectedClipboardCategory.value = it }
+            }
+        }
+        favoriteCategoriesJob = service.lifecycleScope.launch {
+            combine(FavoriteHelper.categoriesFlow(), selectedFavoriteCategory) { cats, sel ->
+                cats to sel
+            }.collect { (cats, sel) ->
+                currentFavoriteCategories = cats
+                if (sel.isNotEmpty() && sel !in cats) {
+                    selectedFavoriteCategory.value = ""
+                }
+                favoritePage.setCategories(
+                    categories = cats,
+                    selected = selectedFavoriteCategory.value,
+                    textColor = scope.colors.keyTextColor,
+                    highlightColor = scope.colors.hilitedCandidateTextColor,
+                ) { selectedFavoriteCategory.value = it }
+            }
         }
     }
 
@@ -242,6 +361,8 @@ class ClipboardWindow(di: DI, private val initialTab: Int = 0) : BoardWindow.Bar
         favoriteEntitiesAdapter.dismissPopupMenu()
         clipboardEntitiesSubmitJob?.cancel()
         favoriteEntitiesSubmitJob?.cancel()
+        clipboardCategoriesJob?.cancel()
+        favoriteCategoriesJob?.cancel()
     }
 
     override fun refreshColors() {
@@ -250,6 +371,18 @@ class ClipboardWindow(di: DI, private val initialTab: Int = 0) : BoardWindow.Bar
         clipboardLayout.titleUi.tabLayout.reconfigureTabs { tabUi, position ->
             configureTab(tabUi, position)
         }
+        clipboardPage.setCategories(
+            categories = currentClipboardCategories,
+            selected = selectedClipboardCategory.value,
+            textColor = scope.colors.keyTextColor,
+            highlightColor = scope.colors.hilitedCandidateTextColor,
+        ) { selectedClipboardCategory.value = it }
+        favoritePage.setCategories(
+            categories = currentFavoriteCategories,
+            selected = selectedFavoriteCategory.value,
+            textColor = scope.colors.keyTextColor,
+            highlightColor = scope.colors.hilitedCandidateTextColor,
+        ) { selectedFavoriteCategory.value = it }
         clipboardEntitiesAdapter.refreshColors()
         favoriteEntitiesAdapter.refreshColors()
     }

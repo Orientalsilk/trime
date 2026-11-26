@@ -17,6 +17,7 @@ import com.osfans.trime.util.removeRegexSet
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -111,6 +112,24 @@ object ClipboardHelper :
 
     fun allEntities() = dao.all()
 
+    fun allEntitiesFlow(category: String = ""): Flow<List<ClipboardEntity>> = dao.allFlow(category)
+
+    fun categoriesFlow(): Flow<List<String>> = dao.categoriesFlow()
+
+    suspend fun updateMeta(
+        id: Int,
+        category: String,
+        note: String,
+    ) {
+        dao.updateMeta(id, category.trim(), note.trim())
+    }
+
+    suspend fun updateSortOrders(updates: List<Pair<Int, Long>>) {
+        database.withTransaction {
+            updates.forEach { (id, order) -> dao.updateSortOrder(id, order) }
+        }
+    }
+
     suspend fun pin(id: Int) = dao.updatePinned(id, true)
 
     suspend fun unpin(id: Int) = dao.updatePinned(id, false)
@@ -165,8 +184,11 @@ object ClipboardHelper :
                 }
                 try {
                     dao.find(entity.text, entity.sensitive)?.let {
-                        updateLastEntity(it.copy(timestamp = entity.timestamp))
-                        dao.updateTimestamp(it.id, entity.timestamp)
+                        updateLastEntity(it.copy(timestamp = entity.timestamp, sortOrder = entity.timestamp))
+                        database.withTransaction {
+                            dao.updateTimestamp(it.id, entity.timestamp)
+                            dao.updateSortOrder(it.id, entity.timestamp)
+                        }
                         return@withLock
                     }
                     val insertedEntity =

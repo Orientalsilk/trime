@@ -258,11 +258,12 @@ class KeyboardWindow(di: DI) :
                 ".last_lock" -> lastLockKeyboardId
 
                 ".ascii" -> {
-                    var ascii = activeKeyboard?.asciiKeyboard
-                    if (ascii.isNullOrEmpty()) {
-                        ascii = lastLockKeyboardId
+                    val ascii = activeKeyboard?.asciiKeyboard
+                    when {
+                        !ascii.isNullOrEmpty() && ascii != ".ascii" -> evalKeyboard(ascii)
+                        lastLockKeyboardId.isNotEmpty() && presetKeyboardIds.contains(lastLockKeyboardId) -> lastLockKeyboardId
+                        else -> smartMatchKeyboard()
                     }
-                    if (presetKeyboardIds.contains(ascii)) ascii else currentKeyboardId
                 }
 
                 else -> {
@@ -323,9 +324,10 @@ class KeyboardWindow(di: DI) :
      */
     fun refreshKeyboards() {
         val id = currentKeyboardId.ifEmpty { return }
+        val target = if (activeKeyboard?.isLock == true) smartMatchKeyboard() else id
         detachCurrentView()
         clearKeyboardCache()
-        attachKeyboard(id)
+        attachKeyboard(target)
     }
 
     /** Repaints the keyboard after a color-scheme switch; keys re-resolve their colors. */
